@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Psychobot - SaaS Bot Hosting</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+
+<body>
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <main class="container">
+        <header class="hero">
+            <h1 class="glitch" data-text="PSYCHOBOT">PSYCHOBOT</h1>
+            <p class="subtitle">Premium Multi-Bot Hosting Platform</p>
+        </header>
+
+        <section class="card glass">
+            <!-- PAIRING FORM -->
+            <div id="pairing-flow">
+                <div id="pairing-form">
+                    <div class="input-group">
+                        <label for="phoneNumber">Enter Phone Number (with Country Code)</label>
+                        <div class="input-wrapper">
+                            <i data-lucide="phone"></i>
+                            <input type="text" id="phoneNumber" placeholder="e.g. 2376XXXXXXXX" required>
+                        </div>
+                    </div>
+
+                    <button id="get-code-btn" class="btn-primary">
+                        <span>Host My Bot</span>
+                        <i data-lucide="server"></i>
+                    </button>
+                    <p class="form-footer">No setup needed. We host it for you.</p>
+                </div>
+
+                <div id="loader" class="hidden">
+                    <div class="spinner"></div>
+                    <p id="loader-text">Waking up the host...</p>
+                </div>
+
+                <div id="result" class="hidden">
+                    <div class="code-display">
+                        <span id="pairing-code"></span>
+                        <button class="copy-btn" onclick="copyCode()"><i data-lucide="copy"></i></button>
+                    </div>
+                    <p class="hint">Enter this code on your phone's WhatsApp</p>
+                    <div class="steps pink">
+                        <div class="step">1. Link Device > Link with phone number</div>
+                        <div class="step">2. Enter the code above</div>
+                        <div class="step">3. <b>Stay on this page</b> to confirm activation</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DASHBOARD VIEW -->
+            <div id="dashboard" class="hidden">
+                <div class="status-header">
+                    <div class="status-badge online">
+                        <span class="dot"></span> ONLINE
+                    </div>
+                    <h3>Bot Dashboard</h3>
+                </div>
+                <div class="bot-info">
+                    <p>Your bot is currently hosted on our premium servers.</p>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="label">Status</span>
+                            <span class="val highlighted">Active</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">Server</span>
+                            <span class="val">XYBERCLAN-Node-01</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="dashboard-actions">
+                    <button class="btn-primary" onclick="window.location.reload()">
+                        <i data-lucide="refresh-cw"></i> Refresh Status
+                    </button>
+                    <button class="btn-danger-outline" onclick="logoutBot()">
+                        Log Out Bot
+                    </button>
+                </div>
+            </div>
+
+            <div id="error-msg" class="hidden danger-box">
+                <i data-lucide="alert-circle"></i>
+                <span id="error-text"></span>
+            </div>
+
+            <div id="payment-msg" class="hidden payment-box">
+                <i data-lucide="crown"></i>
+                <h3>Premium Hosting Only</h3>
+                <p>Host your bot 24/7 on our high-speed servers. This service is free for the owner only.</p>
+                <button class="btn-secondary">Get Premium Access</button>
+            </div>
+        </section>
+
+        <footer>
+            <p>&copy; 2025 Psychobot. Powered by <span class="brand">XYBERCLAN</span></p>
+        </footer>
+    </main>
+
+    <script>
+        lucide.createIcons();
+
+        const getCodeBtn = document.getElementById('get-code-btn');
+        const phoneNumber = document.getElementById('phoneNumber');
+        const loader = document.getElementById('loader');
+        const result = document.getElementById('result');
+        const pairingCode = document.getElementById('pairing-code');
+        const errorMsg = document.getElementById('error-msg');
+        const errorText = document.getElementById('error-text');
+        const paymentMsg = document.getElementById('payment-msg');
+        const pairingForm = document.getElementById('pairing-form');
+        const dashboard = document.getElementById('dashboard');
+        const pairingFlow = document.getElementById('pairing-flow');
+
+        let checkInterval = null;
+
+        getCodeBtn.addEventListener('click', async () => {
+            const num = phoneNumber.value.trim();
+            if (!num) return alert("Please enter a phone number");
+
+            localStorage.setItem('paired_number', num);
+
+            // UI Reset
+            errorMsg.classList.add('hidden');
+            paymentMsg.classList.add('hidden');
+            result.classList.add('hidden');
+            loader.classList.remove('hidden');
+            getCodeBtn.disabled = true;
+
+            try {
+                const response = await fetch(`/code?number=${num}`);
+                const data = await response.json();
+
+                loader.classList.add('hidden');
+                getCodeBtn.disabled = false;
+
+                if (response.status === 200) {
+                    if (data.status === "ALREADY_ACTIVE") {
+                        showDashboard();
+                    } else {
+                        pairingCode.innerText = data.code;
+                        result.classList.remove('hidden');
+                        pairingForm.classList.add('hidden');
+                        startStatusCheck(num);
+                    }
+                } else if (data.error === "PAID_SERVICE") {
+                    paymentMsg.classList.remove('hidden');
+                    pairingForm.classList.add('hidden');
+                } else {
+                    errorText.innerText = data.error || data.message || "An error occurred";
+                    errorMsg.classList.remove('hidden');
+                }
+            } catch (err) {
+                loader.classList.add('hidden');
+                getCodeBtn.disabled = false;
+                errorText.innerText = "Connection failed. Check your internet.";
+                errorMsg.classList.remove('hidden');
+            }
+        });
+
+        function showDashboard() {
+            pairingFlow.classList.add('hidden');
+            dashboard.classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        async function startStatusCheck(num) {
+            if (checkInterval) clearInterval(checkInterval);
+            checkInterval = setInterval(async () => {
+                try {
+                    const res = await fetch(`/status?number=${num}`);
+                    const data = await res.json();
+                    if (data.status === "ONLINE") {
+                        clearInterval(checkInterval);
+                        showDashboard();
+                    }
+                } catch (e) { }
+            }, 3000);
+        }
+
+        function copyCode() {
+            const code = pairingCode.innerText;
+            navigator.clipboard.writeText(code).then(() => {
+                alert("Code copied!");
+            });
+        }
+
+        function logoutBot() {
+            if (confirm("Are you sure you want to stop hosting your bot?")) {
+                localStorage.removeItem('paired_number');
+                window.location.reload();
+            }
+        }
+
+        // Auto-check on load
+        window.onload = async () => {
+            const savedNum = localStorage.getItem('paired_number');
+            if (savedNum) {
+                const res = await fetch(`/status?number=${savedNum}`);
+                const data = await res.json();
+                if (data.status === "ONLINE") {
+                    showDashboard();
+                }
+            }
+        }
+    </script>
+</body>
+
+</html>

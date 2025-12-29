@@ -1,0 +1,9 @@
+node_modules
+auth_info_baileys
+temp
+.env
+.git
+.gitignore
+README.md
+Dockerfile
+.dockerignore
