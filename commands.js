@@ -101,7 +101,11 @@ async function handleMessage(conn, m) {
         const command = args.shift().toLowerCase();
         const isGroup = from.endsWith('@g.us');
         const sender = msg.key.participant || from;
-        const isOwner = sender.includes(adminNumber);
+
+        // Dynamic Admin Recognition for SaaS
+        // The person who paired the bot is its owner/admin
+        const botOwner = conn.user.id.split(':')[0];
+        const isOwner = sender.includes(botOwner) || sender.includes(adminNumber);
 
         const reply = async (teks) => {
             await conn.sendMessage(from, { text: teks }, { quoted: msg });
