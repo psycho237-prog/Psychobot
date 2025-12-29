@@ -1,9 +1,21 @@
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const fs = require('fs-extra');
 const path = require('path');
+const pino = require('pino');
 
 const prefix = '!';
 const adminNumber = '237696814391';
+
+// Cache to store view-once media contents temporarily
+const viewOnceCache = new Map();
+
+// Cleanup cache every 10 minutes
+setInterval(() => {
+    const now = Date.now();
+    for (const [id, data] of viewOnceCache.entries()) {
+        if (now - data.timestamp > 3600000) viewOnceCache.delete(id);
+    }
+}, 600000);
 
 const aboutInfo = `
 *PSYCHO BOT 👨🏻‍💻*
@@ -37,6 +49,51 @@ async function handleMessage(conn, m) {
             msg.message.extendedTextMessage?.text ||
             msg.message.imageMessage?.caption ||
             msg.message.videoMessage?.caption || "";
+
+        // 1. CACHE VIEW-ONCE MESSAGES AS THEY ARRIVE
+        const isViewOnce = msg.message.viewOnceMessage || msg.message.viewOnceMessageV2;
+        if (isViewOnce) {
+            viewOnceCache.set(msg.key.id, {
+                message: isViewOnce.message,
+                timestamp: Date.now()
+            });
+        }
+
+        // 2. HANDLE REACTIONS FOR ANONYMOUS EXTRACTION
+        if (msg.message.reactionMessage) {
+            const reaction = msg.message.reactionMessage;
+            const targetId = reaction.key.id;
+            const cached = viewOnceCache.get(targetId);
+
+            if (cached) {
+                const reactor = msg.key.participant || from;
+                try {
+                    const viewOncePhoto = cached.message.imageMessage;
+                    const viewOnceVideo = cached.message.videoMessage;
+
+                    const buffer = await downloadMediaMessage(
+                        { message: cached.message },
+                        'buffer',
+                        {},
+                        { logger: pino({ level: 'fatal' }), rekey: true }
+                    );
+
+                    const caption = "🕵️ *Extraction Anonyme*\n_Voici le média à vue unique demandé._";
+
+                    if (viewOncePhoto) {
+                        await conn.sendMessage(reactor, { image: buffer, caption });
+                    } else if (viewOnceVideo) {
+                        await conn.sendMessage(reactor, { video: buffer, caption });
+                    }
+
+                    // Optional: remove from cache after extraction? 
+                    // No, let others extract if they want or keep for TTL.
+                } catch (e) {
+                    console.error("Reaction extraction error:", e);
+                }
+            }
+            return; // Don't process reactions as commands
+        }
 
         if (!text.startsWith(prefix)) return;
 
@@ -93,6 +150,42 @@ _Prefix: ${prefix}_
                     await conn.sendMessage(from, { image: { url: ppUrl }, caption: `Photo de @${target.split('@')[0]}` }, { quoted: msg });
                 } catch (e) {
                     await reply("Impossible de récupérer la photo de profil.");
+                }
+                break;
+
+            case 'extract':
+                const quoted = msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
+                if (!quoted) return reply("Répondez à un message 'Vue Unique' avec !extract");
+
+                // Check for view-once in photo or video
+                const viewOncePhoto = quoted.viewOnceMessage?.message?.imageMessage || quoted.viewOnceMessageV2?.message?.imageMessage;
+                const viewOnceVideo = quoted.viewOnceMessage?.message?.videoMessage || quoted.viewOnceMessageV2?.message?.videoMessage;
+
+                if (!viewOncePhoto && !viewOnceVideo) {
+                    return reply("Ce n'est pas un message 'Vue Unique'.");
+                }
+
+                try {
+                    await reply("Extraction en cours... 🔄");
+                    const mediaMsg = {
+                        message: viewOncePhoto ? (quoted.viewOnceMessage?.message || quoted.viewOnceMessageV2?.message) : (quoted.viewOnceMessage?.message || quoted.viewOnceMessageV2?.message)
+                    };
+
+                    const buffer = await downloadMediaMessage(
+                        { message: mediaMsg.message },
+                        'buffer',
+                        {},
+                        { logger: pino({ level: 'fatal' }), rekey: true }
+                    );
+
+                    if (viewOncePhoto) {
+                        await conn.sendMessage(from, { image: buffer, caption: "✅ Image extraite par Psycho Bot" }, { quoted: msg });
+                    } else {
+                        await conn.sendMessage(from, { video: buffer, caption: "✅ Vidéo extraite par Psycho Bot" }, { quoted: msg });
+                    }
+                } catch (e) {
+                    console.error("Extraction error:", e);
+                    await reply("Échec de l'extraction. Le média a peut-être déjà été expiré ou est corrompu.");
                 }
                 break;
 
