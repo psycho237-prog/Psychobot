@@ -25,23 +25,43 @@ module.exports = {
         const from = msg.key.remoteJid;
 
         if (type !== 'action' && type !== 'vérité' && type !== 'verite') {
-            return replyWithTag(sock, from, msg, "🎲 *Jeu Action ou Vérité*\n\nUtilisation:\n- `!av action` : Pour un défi physique/social\n- `!av vérité` : Pour une question indiscrète");
+            return replyWithTag(sock, from, msg, "🔞 *Jeu Action ou Vérité (ADULTE/18+)*\n\nUtilisation:\n- `!av action` : Pour un défi osé/trash\n- `!av vérité` : Pour une question sans tabou");
         }
 
         const isAction = type === 'action';
-        await replyWithTag(sock, from, msg, `🪄 L'IA prépare votre ${isAction ? 'défi' : 'question'}...`);
+        await replyWithTag(sock, from, msg, `🪄 L'IA concocte un truc ${isAction ? 'bien chaud' : 'très indiscret'}...`);
+
+        // Randomize the context to avoid repetitions
+        const themes = ["secret inavouable", "ex-partenaires", "fantasmes", "situations gênantes", "corps et physique", "vie nocturne", "mensonges", "première fois"];
+        const randomTheme = themes[Math.floor(Math.random() * themes.length)];
 
         const prompt = isAction
-            ? "Donne moi un défi 'Action' drôle ou osé à faire dans un groupe WhatsApp. Sois créatif et court (une phrase)."
-            : "Pose moi une question 'Vérité' embarrassante ou curieuse pour un jeu entre amis. Sois créatif et direct (une phrase).";
+            ? `Donne moi un défi 'Action' unique, très osé, embarrassant et pour adultes (18+) sur le thème : ${randomTheme}. Sois trash, explicite et court (une phrase). Change radicalement de sujet.`
+            : `Pose moi une question 'Vérité' unique, très indiscrète, sexuelle ou embarrassante pour adultes (18+) sur le thème : ${randomTheme}. Sois trash, explicite et direct (une phrase). Change radicalement de sujet.`;
 
         try {
             let challenge = await getAIResponse(prompt);
 
             if (!challenge) {
-                // Fallbacks if AI is down
-                const actions = ["Envoie un screen de tes 3 derniers emojis utilisés.", "Chante le refrain de ta chanson préférée en vocal.", "Dis quel est le membre le plus bavard du groupe."];
-                const truths = ["Quel est ton plus grand regret ?", "Quelle est la personne que tu détestes le plus ici ?", "As-tu déjà menti pour éviter un rendez-vous ?"];
+                // Expanded Fallbacks
+                const actions = [
+                    "Sucer son propre pouce en imitant un bébé pendant 1 minute.",
+                    "Faire une simulation d'orgasme en note vocale.",
+                    "Envoyer un message à ton ex pour lui dire 'Tu me manques'.",
+                    "Raconte ton fantasme le plus sale au groupe.",
+                    "Envoie une photo de tes sous-vêtements (ou décris-les en détail).",
+                    "Appelle un contact au hasard et gémis au téléphone.",
+                    "Mets une photo de profil sexy pendant 1 heure."
+                ];
+                const truths = [
+                    "Quelle est ta position préférée au lit ?",
+                    "Quel est ton fantasme le plus inavouable ?",
+                    "As-tu déjà fait ça dans un lieu public ?",
+                    "Avec qui dans ce groupe aimerais-tu passer une nuit ?",
+                    "Quelle est la chose la plus dégoûtante que tu aies faite au lit ?",
+                    "As-tu déjà été surpris en plein acte ?",
+                    "Quel est le plus grand nombre de partenaires que tu as eu ?"
+                ];
                 challenge = isAction ? actions[Math.floor(Math.random() * actions.length)] : truths[Math.floor(Math.random() * truths.length)];
             }
 

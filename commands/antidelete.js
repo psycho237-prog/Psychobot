@@ -1,27 +1,20 @@
-// commands/antidelete.js
 module.exports = {
     name: "antidelete",
-    description: "Restaure les messages supprimés dans le chat.",
+    description: "Active ou désactive la récupération des messages supprimés dans ce groupe.",
     adminOnly: true,
-    run: async ({ sock, msg, replyWithTag }) => {
-        // Stocker les messages reçus globalement
-        if (!global.allMessages) global.allMessages = {};
+    run: async ({ sock, msg, antideleteGroups, replyWithTag }) => {
+        const from = msg.key.remoteJid;
 
-        const jid = msg.key.remoteJid;
-        if (!global.allMessages[jid]) global.allMessages[jid] = [];
+        if (!from.endsWith("@g.us")) {
+            return replyWithTag(sock, from, msg, "❌ Cette commande ne fonctionne que dans un groupe.");
+        }
 
-        // Sauvegarder le message
-        global.allMessages[jid].push(msg);
-
-        // Informer
-        await replyWithTag(sock, jid, msg, "✅ Message enregistré pour anti-delete.");
-    },
-    // Listener pour messages supprimés (revoke)
-    onMessageDelete: async ({ sock, key, deletedMessage }) => {
-        const jid = key.remoteJid;
-        const original = global.allMessages?.[jid]?.find(m => m.key.id === key.id);
-        if (original) {
-            await sock.sendMessage(jid, { text: `⚠️ Un message a été supprimé par ${key.participant || "l'utilisateur"} :\n${original.message.conversation || "[Media]"}` });
+        if (antideleteGroups.has(from)) {
+            antideleteGroups.delete(from);
+            await replyWithTag(sock, from, msg, "🚫 *Anti-Delete Désactivé* pour ce groupe.");
+        } else {
+            antideleteGroups.add(from);
+            await replyWithTag(sock, from, msg, "✅ *Anti-Delete Activé* pour ce groupe.\n_(Les messages supprimés seront envoyés à mon maître)_");
         }
     }
 };

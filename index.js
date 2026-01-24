@@ -54,6 +54,9 @@ let sock = null;
 
 const processedMessages = new Set();
 const messageCache = new Map();
+const antideletePool = new Map(); // Global message pool for antidelete
+const antilinkGroups = new Set(); // Groups with antilink ON
+const antideleteGroups = new Set(); // Groups with antidelete ON
 
 // --- Helpers ---
 const sleep = (ms) => new Promise(res => setTimeout(res, ms));
@@ -305,12 +308,44 @@ async function startBot() {
         if (processedMessages.size > 500) processedMessages.clear(); // Simple GC
 
         const remoteJid = msg.key.remoteJid;
+
+        // AI Auto-Reply for Greetings (No Prefix)
+        // Skip if message is from the bot itself or the owner
+        const msgSender = msg.key.participant || msg.participant || msg.key.remoteJid;
+        const msgSenderClean = msgSender.split(':')[0].split('@')[0];
+        const isFromOwner = msg.key.fromMe || (OWNER_PN && msgSenderClean === OWNER_PN);
+
         // Text extraction
         const text = msg.message?.conversation ||
             msg.message?.extendedTextMessage?.text ||
-            msg.message?.imageMessage?.caption || "";
+            msg.message?.imageMessage?.caption ||
+            msg.message?.videoMessage?.caption || "";
 
         console.log(`[MSG] From ${remoteJid} (${msg.pushName}): ${text.substring(0, 50)}`);
+
+        // --- ANTILINK ENFORCEMENT ---
+        if (antilinkGroups.has(remoteJid) && !isFromOwner) {
+            const linkPattern = /chat.whatsapp.com\/[a-zA-Z0-9]/;
+            if (linkPattern.test(text)) {
+                console.log(`[Antilink] Link detected from ${msg.pushName}. Deleting...`);
+                // Use helper to delete and kick
+                await sock.sendMessage(remoteJid, { delete: msg.key });
+                const groupMetadata = await sock.groupMetadata(remoteJid);
+                const botIsAdmin = groupMetadata.participants.find(p => cleanJid(p.id) === cleanJid(sock.user.id))?.admin;
+                if (botIsAdmin) {
+                    await sock.groupParticipantsUpdate(remoteJid, [msg.key.participant || remoteJid], "remove");
+                }
+                return; // Stop processing
+            }
+        }
+
+        // Cache all messages for Antidelete extraction
+        // Limit cache size to 1000 messages to save memory
+        antideletePool.set(msg.key.id, msg);
+        if (antideletePool.size > 1000) {
+            const firstKey = antideletePool.keys().next().value;
+            antideletePool.delete(firstKey);
+        }
 
         // Cache ViewOnce messages for reaction extraction (Support Ephemeral)
         const realMsg = msg.message?.ephemeralMessage?.message || msg.message;
@@ -320,12 +355,6 @@ async function startBot() {
             messageCache.set(msg.key.id, msg);
             setTimeout(() => messageCache.delete(msg.key.id), 24 * 60 * 60 * 1000); // 24h cache
         }
-
-        // AI Auto-Reply for Greetings (No Prefix)
-        // Skip if message is from the bot itself or the owner
-        const msgSender = msg.key.participant || msg.participant || msg.key.remoteJid;
-        const msgSenderClean = msgSender.split(':')[0].split('@')[0];
-        const isFromOwner = msg.key.fromMe || (OWNER_PN && msgSenderClean === OWNER_PN);
 
         // --- MINI-GAME HANDLER (Passive) ---
         let gameHandled = false;
@@ -423,10 +452,35 @@ async function startBot() {
                     const replyWithTag = async (s, j, m, t) => {
                         await s.sendMessage(j, { text: t, mentions: [m.key.participant || m.key.remoteJid] }, { quoted: m });
                     };
-                    await command.run({ sock, msg, commands, replyWithTag, args });
+                    // Provide group sets for state management
+                    await command.run({ sock, msg, commands, replyWithTag, args, antilinkGroups, antideleteGroups });
                 } catch (err) {
                     console.error(`Erreur ${commandName}:`, err);
                 }
+            }
+        }
+    });
+
+    // --- ANTIDELETE LISTENER ---
+    sock.ev.on("messages.update", async (updates) => {
+        for (const update of updates) {
+            if (update.update.protocolMessage?.type === 0 || update.update.protocolMessage?.type === 5) {
+                const jid = update.key.remoteJid;
+                if (!antideleteGroups.has(jid)) continue;
+
+                const archived = antideletePool.get(update.key.id);
+                if (!archived) continue;
+
+                console.log(`[Antidelete] Detected delete in ${jid}. Recovering ID ${update.key.id}`);
+
+                const sender = archived.key.participant || archived.key.remoteJid;
+                const senderText = `🗑️ *Message Supprimé détecté*\n👤 *Auteur:* @${sender.split('@')[0]}\n💬 *Groupe:* ${jid.split('@')[0]}`;
+
+                const masterJid = sock.user.id.split(':')[0] + "@s.whatsapp.net";
+
+                // Forward to YOU (Master)
+                await sock.sendMessage(masterJid, { text: senderText, mentions: [sender] });
+                await sock.sendMessage(masterJid, { forward: archived });
             }
         }
     });
