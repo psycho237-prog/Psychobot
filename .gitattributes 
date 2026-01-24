@@ -1,0 +1,2 @@
+auth_info filter=lfs diff=lfs merge=lfs -text
+auth_info/* filter=lfs diff=lfs merge=lfs -text

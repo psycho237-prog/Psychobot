@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pairing | Psycho bot</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #5865F2;
+            --secondary: #eb459e;
+            --bg: #0a0a0c;
+            --card-bg: rgba(255, 255, 255, 0.05);
+            --text: #ffffff;
+            --text-dim: #a0a0a0;
+            --input-bg: rgba(0, 0, 0, 0.2);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-image:
+                radial-gradient(circle at 80% 20%, rgba(88, 101, 242, 0.1) 0%, transparent 40%),
+                radial-gradient(circle at 20% 80%, rgba(235, 69, 158, 0.1) 0%, transparent 40%);
+        }
+
+        .container {
+            padding: 2.5rem;
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            max-width: 450px;
+            width: 90%;
+            text-align: center;
+            animation: fadeIn 0.8s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 1.5rem;
+            font-weight: 600;
+        }
+
+        .input-group {
+            margin-bottom: 1.5rem;
+            text-align: left;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+            color: var(--text-dim);
+            padding-left: 4px;
+        }
+
+        input {
+            width: 100%;
+            padding: 14px;
+            background: var(--input-bg);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            color: white;
+            font-size: 1rem;
+            font-family: inherit;
+            box-sizing: border-box;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(88, 101, 242, 0.2);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.3s ease, filter 0.3s ease;
+            box-shadow: 0 4px 15px rgba(88, 101, 242, 0.3);
+        }
+
+        .btn:hover {
+            filter: brightness(1.1);
+            transform: translateY(-1px);
+        }
+
+        .btn:disabled {
+            filter: grayscale(1);
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        #code-display {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background: var(--input-bg);
+            border: 2px dashed rgba(255, 255, 255, 0.2);
+            border-radius: 16px;
+            font-size: 1.8rem;
+            letter-spacing: 4px;
+            font-weight: 600;
+            color: var(--secondary);
+            display: none;
+            animation: slideUp 0.5s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .loading {
+            display: none;
+            margin: 1rem 0;
+            color: var(--text-dim);
+        }
+
+        .error {
+            color: #ff4d4d;
+            font-size: 0.85rem;
+            margin-top: 0.5rem;
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Link Your WhatsApp</h1>
+        <div class="input-group">
+            <label for="phoneNumber">Phone Number (with country code)</label>
+            <input type="text" id="phoneNumber" placeholder="e.g. 2376xxxxxxxx" autocomplete="off">
+            <div id="errorMessage" class="error">Please enter a valid number.</div>
+        </div>
+
+        <button id="submitBtn" class="btn">Get Pairing Code</button>
+
+        <div id="loading" class="loading">Generating code...</div>
+
+        <div id="code-display"></div>
+        <p id="instruction" style="display:none; font-size: 0.85rem; margin-top: 1rem; color: var(--text-dim);">
+            Enter this code on your mobile device: <br>
+            Settings > Linked Devices > Link a Device > Link with phone number instead.
+        </p>
+    </div>
+
+    <script>
+        const submitBtn = document.getElementById('submitBtn');
+        const phoneNumber = document.getElementById('phoneNumber');
+        const codeDisplay = document.getElementById('code-display');
+        const instruction = document.getElementById('instruction');
+        const loading = document.getElementById('loading');
+        const errorMsg = document.getElementById('errorMessage');
+
+        submitBtn.addEventListener('click', async () => {
+            const number = phoneNumber.value.trim();
+            if (!number) {
+                errorMsg.style.display = 'block';
+                return;
+            }
+            errorMsg.style.display = 'none';
+
+            submitBtn.disabled = true;
+            loading.style.display = 'block';
+            codeDisplay.style.display = 'none';
+            instruction.style.display = 'none';
+
+            try {
+                const response = await fetch(`/code?number=${number}`);
+                const data = await response.json();
+
+                if (data.code) {
+                    codeDisplay.innerText = data.code;
+                    codeDisplay.style.display = 'block';
+                    instruction.style.display = 'block';
+                } else {
+                    alert('Failed to get code. Please try again.');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('An error occurred. Check server logs.');
+            } finally {
+                loading.style.display = 'none';
+                submitBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+
+</html>

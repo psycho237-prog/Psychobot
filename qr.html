@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scan QR Code | Psycho Bot</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <style>
+        :root {
+            --primary: #5865F2;
+            --secondary: #eb459e;
+            --bg: #0a0a0c;
+            --card-bg: rgba(255, 255, 255, 0.05);
+            --text: #ffffff;
+            --text-dim: #a0a0a0;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            background-image:
+                radial-gradient(circle at 20% 20%, rgba(88, 101, 242, 0.15) 0%, transparent 40%),
+                radial-gradient(circle at 80% 80%, rgba(235, 69, 158, 0.15) 0%, transparent 40%);
+        }
+
+        .container {
+            text-align: center;
+            z-index: 1;
+            padding: 2rem;
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            max-width: 400px;
+            width: 90%;
+            animation: fadeIn 0.8s ease-out;
+        }
+
+        h2 {
+            margin-top: 0;
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        #qr-container {
+            margin: 20px 0;
+            min-height: 264px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 10px;
+        }
+
+        #qr-image {
+            width: 250px;
+            height: 250px;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .status {
+            font-size: 0.9rem;
+            color: var(--text-dim);
+            margin-top: 10px;
+        }
+
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-left-color: var(--primary);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .btn-home {
+            margin-top: 20px;
+            display: inline-block;
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.3s;
+        }
+
+        .btn-home:hover {
+            color: var(--text);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h2>Scan QR Code</h2>
+        <p style="font-size: 0.9rem; color: #ccc;">Open WhatsApp > Linked Devices > Link a Device</p>
+
+        <div id="qr-container">
+            <div class="spinner" id="spinner"></div>
+            <img id="qr-image" alt="Scan QR Code" />
+        </div>
+
+        <div class="status" id="status">Connecting to server...</div>
+
+        <a href="/" class="btn-home">← Back to Home</a>
+    </div>
+
+    <script>
+        const qrImage = document.getElementById('qr-image');
+        const spinner = document.getElementById('spinner');
+        const statusDiv = document.getElementById('status');
+
+        // Connect to WebSocket using current host
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = protocol + '//' + window.location.host;
+
+        console.log("Connecting to WS:", wsUrl);
+        const ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+            statusDiv.textContent = "Waiting for QR Code...";
+        };
+
+        ws.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+
+                if (data.type === 'qr') {
+                    spinner.style.display = 'none';
+                    qrImage.style.display = 'block';
+                    qrImage.src = data.qr;
+                    statusDiv.innerHTML = '<span style="color: #4ade80">Scan this code now!</span>';
+                }
+
+                if (data.type === 'status') {
+                    statusDiv.textContent = data.message;
+                }
+
+                if (data.type === 'connected') {
+                    spinner.style.display = 'none';
+                    qrImage.style.display = 'none';
+                    statusDiv.innerHTML = `
+                        <div style="font-size: 3rem; margin-bottom:10px">✅</div>
+                        <div style="color: #4ade80; font-weight: bold">Connected Successfully!</div>
+                        <div>User: ${data.user}</div>
+                    `;
+                    // Redirect after 3 seconds
+                    setTimeout(() => window.location.href = '/', 3000);
+                }
+
+                if (data.type === 'error') {
+                    statusDiv.style.color = '#ef4444';
+                    statusDiv.textContent = "Error: " + data.message;
+                }
+
+            } catch (e) {
+                console.error("Error parsing message:", e);
+            }
+        };
+
+        ws.onclose = () => {
+            statusDiv.style.color = '#ef4444';
+            statusDiv.textContent = "Connection closed. Refresh to try again.";
+        };
+
+        ws.onerror = (err) => {
+            console.error("WS Error:", err);
+            statusDiv.style.color = '#ef4444';
+            statusDiv.textContent = "Connection error.";
+        };
+    </script>
+</body>
+
+</html>
