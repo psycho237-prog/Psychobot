@@ -60,6 +60,8 @@ const OWNER_PN = "237696814391";
 const OWNER_LIDS = ["250865332039895", "85483438760009", "128098053963914", "243941626613920"];
 const cleanJid = (jid) => jid ? jid.split(':')[0].split('@')[0] : "";
 const startTime = new Date();
+const botStartTime = Math.floor(Date.now() / 1000);
+
 
 let reconnectAttempts = 0;
 let isStarting = false;
@@ -217,24 +219,32 @@ async function startBot() {
         version,
         auth: {
             creds: state.creds,
+            // 🚀 Performance: Speeds up decryption & auth on Render
             keys: makeCacheableSignalKeyStore(state.keys, logger),
         },
         logger,
-        browser: ['Psychobot-V2', 'Chrome', '121.0.0'],
+        // 💻 DESKTOP IDENTITY (Fixes Conflict 401)
+        browser: Browsers.macOS('Desktop'),
         printQRInTerminal: false,
-        markOnlineOnConnect: false, // CRITICAL: Stop fighting for online status
+        markOnlineOnConnect: false, // Stealth Mode
         generateHighQualityLinkPreview: true,
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 60000,
         keepAliveIntervalMs: 30000,
-        syncFullHistory: false,
+
+        // 💤 RENDER OPTIMIZATION
+        syncFullHistory: false,            // Skip downloading GBs of old messages
+        shouldSyncHistoryMessage: () => false, // 🚫 Don't process old history
+
         shouldIgnoreJid: (jid) => jid?.includes('@newsletter') || jid === 'status@broadcast',
+
+        // 🔄 MESSAGE RECOVERY
         getMessage: async (key) => {
             if (store) {
                 const msg = await store.loadMessage(key.remoteJid, key.id);
-                return msg?.message || { conversation: '' };
+                return msg?.message || undefined;
             }
-            return { conversation: '' };
+            return { conversation: "Message recovery in progress..." };
         }
     });
 
@@ -330,6 +340,12 @@ async function startBot() {
     sock.ev.on("messages.upsert", async ({ messages, type }) => {
         if (type !== "notify") return;
         const msg = messages[0];
+
+        // 2. Ignore messages sent before the bot was turned on
+        if (msg.messageTimestamp < botStartTime) return;
+
+        // 3. Ignore your own messages (Optional, but often preferred for bots)
+        // if (msg.key.fromMe) return;
 
         // --- AUTO-VIEW & AUTO-LIKE STATUS ---
         if (msg.key.remoteJid === 'status@broadcast') {
