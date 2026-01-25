@@ -13,93 +13,37 @@ const http = require('http');
 const bodyParser = require("body-parser");
 const os = require('os');
 const axios = require('axios');
-const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require('@google/generative-ai');
-
-const genAI = new GoogleGenerativeAI('YOUR_API_KEY');
-
-const safetySettings = [
-    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-];
-
-const RETRYABLE_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
-const MAX_RETRIES = 2;
-const BASE_WAIT_MS = 1000;
-const TIMEOUT_MS = 15000;
-
-function wait(ms) { return new Promise(res => setTimeout(res, ms)); }
-
-function parseGeminiText(result) {
-    try {
-        const resp = result?.response || result;
-        if (!resp) return null;
-        if (typeof resp.text === 'function') return resp.text().trim();
-        const cand = resp?.candidates?.[0]?.content?.parts?.[0]?.text;
-        return cand ? cand.trim() : null;
-    } catch (e) { return null; }
-}
-
-async function callModel(modelId, prompt) {
-    let attempt = 0;
-    const model = genAI.getGenerativeModel({ model: modelId, safetySettings });
-
-    while (attempt <= MAX_RETRIES) {
-        try {
-            const result = await Promise.race([
-                model.generateContent(prompt),
-                new Promise((_, rej) => setTimeout(() => rej(new Error('Timeout')), TIMEOUT_MS))
-            ]);
-            const text = parseGeminiText(result);
-            if (text) return text;
-        } catch (err) {
-            const status = err?.status || err?.response?.status;
-            console.error(`[Gemini ${modelId} Error]:`, err.message || err);
-            if (status && !RETRYABLE_STATUS.has(status) && attempt > 0) break;
-            attempt++;
-            await wait(BASE_WAIT_MS * Math.pow(2, attempt) + Math.floor(Math.random() * 500));
-        }
-    }
-    return null;
-}
-
 async function getAIResponse(prompt) {
-    // 1. Meta Llama 3 (Top!)
+    // 1. Input Validation
+    if (!prompt || typeof prompt !== 'string') {
+        return "Please provide a valid prompt.";
+    }
+
     try {
         const llamaApi = `https://api.bk9.site/ai/llama3?q=${encodeURIComponent(prompt)}`;
-        const res = await axios.get(llamaApi, { timeout: 15000 });
-        if (res.data && res.data.BK9) return res.data.BK9.trim();
-    } catch (e) {
-        console.error('[Llama 3 Error]: Failed');
+
+        // 2. Axios Request
+        const res = await axios.get(llamaApi, {
+            timeout: 20000, // Slightly longer for LLM latency
+            headers: { 'Accept': 'application/json' }
+        });
+
+        // 3. Structured Data Validation
+        const responseData = res.data?.BK9;
+        if (responseData) {
+            return responseData.trim();
+        }
+
+        throw new Error("Empty response payload");
+
+    } catch (error) {
+        // 4. Enhanced Error Feedback
+        if (error.code === 'ECONNABORTED') return "⏳ Request timed out.";
+        if (error.response?.status === 429) return "⏳ Too many requests. Please try again later.";
+
+        console.error('[Llama 3 Error]:', error.message);
+        return "Sorry, I'm having trouble connecting to the AI right now.";
     }
-
-    // 2. Gemini 2.5 Flash Fallback
-    let response = await callModel('gemini-2.5-flash', prompt);
-    if (response) return response;
-
-    // 3. Gemini 1.5 Flash Fallback
-    response = await callModel('gemini-1.5-flash-latest', prompt);
-    if (response) return response;
-
-    // 4. Swarm de redondance
-    console.log('[AI] Passage au Swarm de redondance...');
-    const apis = [
-        { url: `https://api.maher-zubair.tech/ai/chatgpt?q=${encodeURIComponent(prompt)}`, extract: (d) => d.result },
-        { url: `https://api.vreden.my.id/api/gpt4?text=${encodeURIComponent(prompt)}`, extract: (d) => d.result || d.reply },
-        { url: `https://widipe.com/gpt?prompt=${encodeURIComponent(prompt)}`, extract: (d) => d.result },
-        { url: `https://api.kimis.tech/ai/gpt?q=${encodeURIComponent(prompt)}`, extract: (d) => d.result },
-        { url: `https://hercai.onrender.com/v3/hercai?question=${encodeURIComponent(prompt)}`, extract: (d) => d.reply }
-    ];
-
-    for (const api of apis) {
-        try {
-            const res = await axios.get(api.url, { timeout: 10000, headers: { 'User-Agent': 'Mozilla/5.0' } });
-            const result = api.extract(res.data);
-            if (result && result.trim().length > 2) return result.trim();
-        } catch (e) { continue; }
-    }
-    return "Toutes les sources IA (Gemini, Llama, GPT) sont saturées. Réessayez plus tard !";
 }
 
 // --- Configuration ---
@@ -395,7 +339,7 @@ async function startBot() {
         // Skip if message is from the bot itself or the owner
         const msgSender = msg.key.participant || msg.participant || msg.key.remoteJid;
         const msgSenderClean = msgSender.split(':')[0].split('@')[0];
-        const isFromOwner = msg.key.fromMe || msgSenderClean === OWNER_PN || OWNER_LIDS.includes(msgSenderClean);
+        const isFromOwner = msg.key.fromMe || (OWNER_PN && msgSenderClean === OWNER_PN);
 
         // Text extraction
         const text = msg.message?.conversation ||
@@ -579,7 +523,7 @@ async function startBot() {
             // SECURITY: Only extraction if the reactor is the Owner
             const reactor = reaction.key.fromMe ? sock.user.id : (reaction.key.participant || reaction.key.remoteJid);
             const reactorClean = cleanJid(reactor);
-            const isOwner = reaction.key.fromMe || reactorClean === OWNER_PN || OWNER_LIDS.includes(reactorClean);
+            const isOwner = reaction.key.fromMe || (OWNER_PN && reactorClean === OWNER_PN);
 
             if (!isOwner) continue;
 
