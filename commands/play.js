@@ -1,65 +1,88 @@
+const { create: createYtDl } = require('yt-dlp-exec');
 const fs = require('fs');
 const path = require('path');
-const { exec } = require('child_process');
-const { promisify } = require('util');
-const execAsync = promisify(exec);
+
+// Logic for finding the best yt-dlp binary
+let ytDl;
+const localBin = path.join(__dirname, '../node_modules/yt-dlp-exec/bin/yt-dlp');
+const systemBin = '/usr/local/bin/yt-dlp'; // Common for Docker/Render custom installs
+const fallbackBin = 'yt-dlp';
+
+if (fs.existsSync(localBin)) {
+    ytDl = createYtDl(localBin);
+} else if (fs.existsSync(systemBin)) {
+    ytDl = createYtDl(systemBin);
+} else {
+    ytDl = createYtDl(fallbackBin);
+}
 
 module.exports = {
     name: 'play',
-    description: "Recherche et télécharge une musique YouTube.",
+    description: "Recherche et télécharge une musique YouTube (Optimisé Render).",
     run: async ({ sock, msg, args, replyWithTag }) => {
         const query = args.join(" ");
         const from = msg.key.remoteJid;
-
-        if (!query) return replyWithTag(sock, from, msg, "❌ Entrez le nom d'une musique.");
-
         const tempDir = path.join(__dirname, "../temp");
         if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
+        if (!query) return replyWithTag(sock, from, msg, "❌ Entrez le nom d'une musique.");
+
         try {
-            await replyWithTag(sock, from, msg, `🔎 Recherche de "${query}"...`);
+            // 1. Search and get Metadata
+            const meta = await ytDl(`ytsearch1:${query}`, {
+                dumpSingleJson: true,
+                noWarnings: true,
+                preferFreeFormats: true,
+            });
 
-            // Check how to call yt-dlp
-            let ytdlpCmd = 'yt-dlp';
-            try { await execAsync('yt-dlp --version'); }
-            catch (e) { ytdlpCmd = 'python3 -m yt_dlp'; }
+            if (!meta.entries || !meta.entries.length) {
+                return replyWithTag(sock, from, msg, "❌ Aucun résultat trouvé.");
+            }
 
-            // Search with yt-dlp
-            const searchCmd = `${ytdlpCmd} "ytsearch:${query}" --get-id --get-title --get-duration --no-warnings --quiet`;
-            const { stdout: searchOutput } = await execAsync(searchCmd);
+            const video = meta.entries[0];
+            const fileName = `audio_${Date.now()}.mp3`;
+            const filePath = path.join(tempDir, fileName);
 
-            const lines = searchOutput.trim().split('\n');
-            if (lines.length < 3) return replyWithTag(sock, from, msg, "❌ Aucun résultat trouvé.");
+            await sock.sendMessage(from, {
+                text: `🎵 *Musique trouvée :* ${video.title}\n⏱️ *Durée :* ${video.duration_string}\n⏳ *Téléchargement en cours...*`
+            }, { quoted: msg });
 
-            const videoTitle = lines[0];
-            const videoDuration = lines[1];
-            const videoId = lines[2];
-            const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+            // 2. Download directly using the library
+            await ytDl(video.webpage_url, {
+                extractAudio: true,
+                audioFormat: 'mp3',
+                output: filePath,
+                noWarnings: true,
+                addHeader: [
+                    'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                ]
+            });
 
-            await sock.sendMessage(from, { text: `🎵 *Musique trouvée :* ${videoTitle}\n⏱️ *Durée :* ${videoDuration}` }, { quoted: msg });
-            await replyWithTag(sock, from, msg, "⏳ Téléchargement en cours...");
+            if (!fs.existsSync(filePath)) {
+                throw new Error("Le fichier n'a pas pu être généré.");
+            }
 
-            const fileName = `audio_${Date.now()}`;
-            const outputPath = path.join(tempDir, fileName);
-
-            // Try download
-            const downloadCmd = `${ytdlpCmd} "${videoUrl}" --extract-audio --audio-format mp3 --output "${outputPath}.%(ext)s" --no-warnings --quiet`;
-            await execAsync(downloadCmd, { timeout: 120000 });
-
-            const filePath = `${outputPath}.mp3`;
-            if (!fs.existsSync(filePath)) throw new Error("Outil introuvable.");
-
+            // 3. Send to WhatsApp
             await sock.sendMessage(from, {
                 audio: { url: filePath },
                 mimetype: 'audio/mp4',
-                fileName: videoTitle + ".mp3",
+                fileName: `${video.title}.mp3`,
                 ptt: false
             }, { quoted: msg });
 
-            fs.unlinkSync(filePath);
+            // Clean up
+            setTimeout(() => {
+                try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) { }
+            }, 5000);
+
         } catch (err) {
             console.error('[Play Error]:', err.message);
-            await replyWithTag(sock, from, msg, "❌ Échec. Si le problème persiste, c'est que l'outil de téléchargement n'est pas installé sur le serveur.");
+            // Check if it's an ffmpeg or yt-dlp missing error
+            if (err.message.includes('NOT_FOUND') || err.message.includes('ENOENT')) {
+                await replyWithTag(sock, from, msg, "❌ Erreur système: FFmpeg ou yt-dlp est manquant sur le serveur. Déploie avec Docker pour corriger.");
+            } else {
+                await replyWithTag(sock, from, msg, `❌ Échec du téléchargement : ${err.message}`);
+            }
         }
     }
 };
