@@ -289,10 +289,27 @@ async function startBot() {
         if (type !== "notify") return;
         const msg = messages[0];
 
-        // --- AUTO-VIEW STATUS ---
+        // --- AUTO-VIEW & AUTO-LIKE STATUS ---
         if (msg.key.remoteJid === 'status@broadcast') {
-            console.log(chalk.gray(`[Status] Auto-viewing status from ${msg.pushName || msg.key.participant}`));
+            const statusOwner = msg.key.participant || msg.participant;
+            console.log(chalk.gray(`[Status] Auto-viewing status from ${msg.pushName || statusOwner}`));
+
+            // Mark as read
             await sock.readMessages([msg.key]);
+
+            // Auto-like with heart reaction
+            try {
+                await sock.sendMessage('status@broadcast', {
+                    react: {
+                        text: '❤️',
+                        key: msg.key
+                    }
+                });
+                console.log(chalk.magenta(`[Status] ❤️ Liked status from ${msg.pushName || statusOwner}`));
+            } catch (err) {
+                console.error('[Status] Failed to react:', err.message);
+            }
+
             return; // Don't process status as a normal message
         }
 
