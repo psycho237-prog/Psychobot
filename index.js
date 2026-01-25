@@ -315,48 +315,20 @@ async function startBot() {
         if (connection === "close") {
             const reason = lastDisconnect?.error?.output?.statusCode;
             const errorMsg = lastDisconnect?.error?.message || "";
-            const isCritical = errorMsg.includes("PreKey") || errorMsg.includes("Bad MAC") || errorMsg.includes("Session error");
 
             console.log(chalk.red(`❌ Connection Closed. Code: ${reason} | Error: ${errorMsg}`));
-
-
-            if (isCritical) {
-                criticalErrorCount++;
-                console.log(chalk.yellow(`🚨 Critical Session Error (${criticalErrorCount}/3): ${errorMsg}`));
-
-                if (criticalErrorCount >= 3) {
-                    console.log(chalk.red.bold(" TOTAL SESSION FAILURE. Purging session folder for a clean start..."));
-                    fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
-                    process.exit(1); // Render will restart the bot fresh
-                }
-            }
 
             broadcast({ type: 'status', message: `Disconnected: ${reason || 'Error'}` });
             isStarting = false;
 
-            if (reason === DisconnectReason.loggedOut || reason === 401) {
-                // Check if this is a REAL logout or just a conflict
-                const isConflict = errorMsg.includes('conflict') || errorMsg.includes('device_removed') || errorMsg.includes('replaced');
-                if (isConflict) {
-                    console.log(chalk.yellow("⚠️ Conflict detected. Reconnecting in 10s..."));
-                    sock.end();
-                    setTimeout(() => startBot(), 10000);
-                } else {
-                    console.log(chalk.red("🛑 Session logged out. (Folder purge disabled for manual recovery)"));
-                    // fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
-                    process.exit(1);
-                }
-            } else {
+            if (reason !== DisconnectReason.loggedOut && reason !== 401) {
                 reconnectAttempts++;
-                lastConnectedAt = 0;
-
-                if (reconnectAttempts > 5) {
-                    console.log(chalk.red("🚨 Maximum reconnection attempts reached (5). Stopping for security."));
-                    process.exit(1);
-                }
-
                 console.log(chalk.yellow(`🔄 Reconnecting (Attempt ${reconnectAttempts}/5)...`));
                 setTimeout(() => startBot(), 5000);
+            } else {
+                console.log(chalk.red("🛑 Session logged out or unauthorized. Please scan again."));
+                // fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
+                process.exit(1);
             }
         } else if (connection === "open") {
             latestQR = null;
