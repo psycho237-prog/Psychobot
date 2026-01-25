@@ -56,12 +56,12 @@ module.exports = {
 
             await sock.sendMessage(remoteJid, messageOptions, { quoted: msg });
 
-            // Nettoyage après 5 secondes
-            setTimeout(() => {
-                try {
-                    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-                } catch (e) { }
-            }, 5000);
+            // Nettoyage immédiat
+            try {
+                if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            } catch (e) {
+                console.error('[Cleanup Error]:', e.message);
+            }
 
         } catch (err) {
             console.error('[StatusDown Error]:', err);
