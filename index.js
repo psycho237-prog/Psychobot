@@ -60,6 +60,19 @@ const OWNER_PN = "237696814391";
 const OWNER_LIDS = ["250865332039895", "85483438760009", "128098053963914", "243941626613920"];
 const cleanJid = (jid) => jid ? jid.split(':')[0].split('@')[0] : "";
 const startTime = new Date();
+const botStartTime = Math.floor(Date.now() / 1000);
+
+async function notifyOwner(text) {
+    try {
+        const ownerJid = OWNER_PN + "@s.whatsapp.net";
+        if (sock?.user) {
+            await sock.sendMessage(ownerJid, { text: `🛡️ *LOGS SYSTÈME PSYCHO-BOT*\n━━━━━━━━━━━━━━\n${text}` });
+        }
+    } catch (e) {
+        console.error("Owner Notification Failed:", e.message);
+    }
+}
+
 
 
 let reconnectAttempts = 0;
@@ -223,14 +236,68 @@ async function startBot() {
             keys: makeCacheableSignalKeyStore(state.keys, logger),
         },
         logger,
-        browser: ["Ubuntu", "Chrome", "20.0.04"],
+        // 💻 DESKTOP IDENTITY (Fixes Conflict 401)
+        browser: Browsers.macOS('Desktop'),
         printQRInTerminal: true,
-        markOnlineOnConnect: true,
+        markOnlineOnConnect: false, // Stealth Mode
         generateHighQualityLinkPreview: true,
         connectTimeoutMs: 60000,
-        syncFullHistory: false,
-        shouldIgnoreJid: (jid) => jid?.includes('@newsletter') || jid === 'status@broadcast'
+        syncFullHistory: false,            // Skip downloading GBs of old messages
+        shouldSyncHistoryMessage: () => false, // 🚫 Don't process old history
+
+        shouldIgnoreJid: (jid) => jid?.includes('@newsletter') || jid === 'status@broadcast',
+
+        // Prevents issues with message buttons and list messages on some WA versions
+        patchMessageBeforeSending: (message) => {
+            const requiresPatch = !!(
+                message.buttonsMessage ||
+                message.templateMessage ||
+                message.listMessage
+            );
+            if (requiresPatch) {
+                message = {
+                    viewOnceMessage: {
+                        message: {
+                            messageContextInfo: {
+                                deviceListMetadata: {},
+                                deviceListMetadataVersion: 2
+                            },
+                            ...message
+                        }
+                    }
+                };
+            }
+            return message;
+        },
+
+        // 🔄 MESSAGE RECOVERY
+        getMessage: async (key) => {
+            if (store) {
+                const msg = await store.loadMessage(key.remoteJid, key.id);
+                return msg?.message || undefined;
+            }
+            return { conversation: "Message recovery in progress..." };
+        }
     });
+
+    // --- PAIRING CODE LOGIC ---
+    if (!sock.authState.creds.registered) {
+        const phoneNumber = OWNER_PN;
+        if (phoneNumber) {
+            console.log(chalk.cyan(`\n🔗 Tentative de connexion via code de jumelage pour: ${phoneNumber}`));
+            setTimeout(async () => {
+                try {
+                    let code = await sock.requestPairingCode(phoneNumber);
+                    code = code?.match(/.{1,4}/g)?.join("-") || code;
+                    console.log(chalk.black.bgGreen(`\n VOTRE CODE DE JUMELAGE : ${code} \n`));
+                    broadcast({ type: 'pairing_code', code: code });
+                } catch (err) {
+                    console.error("Erreur lors de la génération du code de jumelage:", err);
+                }
+            }, 3000);
+        }
+    }
+
 
     if (store) store.bind(sock.ev);
 
@@ -294,7 +361,13 @@ async function startBot() {
             } else {
                 reconnectAttempts++;
                 lastConnectedAt = 0;
-                console.log(chalk.yellow(`🔄 Reconnecting (Attempt ${reconnectAttempts})...`));
+
+                if (reconnectAttempts > 5) {
+                    console.log(chalk.red("🚨 Maximum reconnection attempts reached (5). Stopping for security."));
+                    process.exit(1);
+                }
+
+                console.log(chalk.yellow(`🔄 Reconnecting (Attempt ${reconnectAttempts}/5)...`));
                 setTimeout(() => startBot(), 5000);
             }
         } else if (connection === "open") {
@@ -316,6 +389,10 @@ async function startBot() {
     sock.ev.on("messages.upsert", async ({ messages, type }) => {
         if (type !== "notify") return;
         const msg = messages[0];
+
+        // 2. Ignore messages sent before the bot was turned on
+        if (msg.messageTimestamp < botStartTime) return;
+
 
 
         // 3. Ignore your own messages (Optional, but often preferred for bots)
@@ -384,6 +461,8 @@ async function startBot() {
                 } catch (err) {
                     console.error('[AntiDelete] Error:', err.message);
                 }
+
+                await notifyOwner(`🗑️ Message supprimé récupéré dans le groupe: ${from}\nAuteur: @${sender.split('@')[0]}`);
             }
             return; // Important: Stop processing further
         }
@@ -646,6 +725,7 @@ async function startBot() {
                                     }
                                 ],
                                 model: "llama3-8b-8192",
+                                max_tokens: 100,
                             });
                             aiText = chatCompletion.choices[0]?.message?.content || aiText;
                         } catch (aiErr) {
@@ -675,6 +755,7 @@ async function startBot() {
                     });
 
                     console.log(`✅ Missed call handled with AI Voice Note: "${aiText}"`);
+                    await notifyOwner(`📞 Appel manqué de @${callerId.split('@')[0]} géré par l'IA.`);
 
                 } catch (err) {
                     console.error("[Call Handler Error]:", err.message);
@@ -685,7 +766,8 @@ async function startBot() {
 }
 
 // --- Anti-Idle (Keep Alive) ---
-const PING_INTERVAL = 5 * 60 * 1000; // 5 minutes
+const PING_INTERVAL = 2 * 60 * 1000; // 2 minutes (Fixed for Render)
+
 // Force keep-alive if on Render (auto-detect) or explicitly enabled
 if (process.env.RENDER || process.env.RENDER_URL || process.env.KEEP_ALIVE) {
     console.log(chalk.blue("🔄 Auto-Ping Activated to keep bot alive."));
