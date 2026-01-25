@@ -9,6 +9,6 @@ services:
       - key: PORT
         value: 10000
       - key: GROQ_API_KEY
-        value: YOUR_GROQ_API_KEY
+        sync: false
 
 
