@@ -56,8 +56,8 @@ const PORT = process.env.PORT || 10000;
 const AUTH_FOLDER = path.join(__dirname, "session");
 const PREFIX = "!";
 const BOT_NAME = "PSYCHO BOT";
-const OWNER_PN = "237696814391";
-const OWNER_LIDS = ["250865332039895", "85483438760009", "128098053963914", "243941626613920"];
+const OWNER_PN = process.env.OWNER_PN || "237696814391";
+const OWNER_LIDS = (process.env.OWNER_LIDS || "250865332039895,85483438760009,128098053963914,243941626613920").split(',');
 const cleanJid = (jid) => jid ? jid.split(':')[0].split('@')[0] : "";
 const startTime = new Date();
 
