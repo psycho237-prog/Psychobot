@@ -163,11 +163,11 @@ async function startBot() {
     header();
     broadcast({ type: 'status', message: 'Starting Bot...' });
 
-    // RENDER SETTLING DELAY
+    // RENDER SETTLING DELAY (Harden for conflicts)
     const isRender = process.env.RENDER || process.env.RENDER_URL;
     if (reconnectAttempts === 0 && isRender) {
-        const jitter = Math.floor(Math.random() * 5000); // 5s jitter sufficient
-        console.log(chalk.yellow(`⏳ STABILISATION (${jitter}ms jitter)...`));
+        const jitter = Math.floor(Math.random() * 20000) + 10000; // 10-30s delay to let old instance die
+        console.log(chalk.yellow(`⏳ STABILISATION RENDER (${jitter}ms)...`));
         await sleep(jitter);
     }
 
@@ -219,7 +219,7 @@ async function startBot() {
             keys: makeCacheableSignalKeyStore(state.keys, logger),
         },
         logger,
-        browser: ["Ubuntu", "Chrome", "20.0.04"],
+        browser: Browsers.macOS("Desktop"),
         printQRInTerminal: false, // Avoid deprecation warning
         markOnlineOnConnect: true,
         generateHighQualityLinkPreview: true,
@@ -286,12 +286,22 @@ async function startBot() {
             broadcast({ type: 'status', message: `Disconnected: ${reason || 'Error'}` });
             isStarting = false;
 
-            if (reason === DisconnectReason.loggedOut) {
-                console.log(chalk.red("🛑 Logged Out. Clearing session."));
+            // REAL LOGOUT DETECTION
+            const isExplicitLogout = reason === DisconnectReason.loggedOut;
+            const isDeviceRemoved = reason === 401; // Can be conflict or real removal
+
+            if (isExplicitLogout) {
+                console.log(chalk.red("🛑 Explicitly Logged Out. Clearing session."));
                 fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
                 process.exit(0);
             } else if (reason === DisconnectReason.connectionReplaced || reason === 440 || reason === 405) {
-                console.log(chalk.red("⚠️ Session Conflict. Restarting..."));
+                console.log(chalk.red("⚠️ Session Conflict (Replaced). Restarting..."));
+                sock.end();
+                process.exit(1);
+            } else if (isDeviceRemoved) {
+                // On Render, 401 often means conflict between old/new container
+                // Don't purge immediately unless we are sure.
+                console.log(chalk.yellow("⚠️ 401 Unauthorized/Conflict detected. Restarting without purge..."));
                 sock.end();
                 process.exit(1);
             } else {
