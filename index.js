@@ -60,7 +60,6 @@ const OWNER_PN = "237696814391";
 const OWNER_LIDS = ["250865332039895", "85483438760009", "128098053963914", "243941626613920"];
 const cleanJid = (jid) => jid ? jid.split(':')[0].split('@')[0] : "";
 const startTime = new Date();
-const botStartTime = Math.floor(Date.now() / 1000);
 
 
 let reconnectAttempts = 0;
@@ -73,6 +72,8 @@ const processedMessages = new Set();
 const messageCache = new Map();
 const antilinkGroups = new Set(); // Groups with antilink ON
 const antideleteGroups = new Set(); // Groups with antidelete ON
+let readReceiptsEnabled = false; // Global toggle for read receipts
+
 
 // --- Store (Bot Memory) ---
 const store = makeInMemoryStore({ logger: pino().child({ level: 'silent', stream: 'store' }) });
@@ -165,13 +166,12 @@ async function startBot() {
     header();
     broadcast({ type: 'status', message: 'Starting Bot...' });
 
-    // RENDER SETTLING DELAY (Extreme Hardening)
+    // RENDER SETTLING DELAY
     const isRender = process.env.RENDER || process.env.RENDER_URL;
     if (reconnectAttempts === 0 && isRender) {
-        // Render containers can overlap significantly. 
-        // We wait 60 seconds to ensure the old instance is completely de-registered by WA.
-        console.log(chalk.yellow(`⏳ STABILISATION RENDER (60s Extreme Delay)...`));
-        await sleep(60000);
+        const jitter = Math.floor(Math.random() * 5000); // 5s jitter sufficient
+        console.log(chalk.yellow(`⏳ STABILISATION (${jitter}ms jitter)...`));
+        await sleep(jitter);
     }
 
     console.log(chalk.cyan("🚀 Connexion au socket WhatsApp..."));
@@ -223,52 +223,13 @@ async function startBot() {
             keys: makeCacheableSignalKeyStore(state.keys, logger),
         },
         logger,
-        // 💻 DESKTOP IDENTITY (Fixes Conflict 401)
-        browser: Browsers.macOS('Desktop'),
-        printQRInTerminal: false,
-        markOnlineOnConnect: false, // Stealth Mode
+        browser: ["Ubuntu", "Chrome", "20.0.04"],
+        printQRInTerminal: true,
+        markOnlineOnConnect: true,
         generateHighQualityLinkPreview: true,
         connectTimeoutMs: 60000,
-        defaultQueryTimeoutMs: 60000,
-        keepAliveIntervalMs: 30000,
-
-        // 💤 RENDER OPTIMIZATION
-        syncFullHistory: false,            // Skip downloading GBs of old messages
-        shouldSyncHistoryMessage: () => false, // 🚫 Don't process old history
-
-        shouldIgnoreJid: (jid) => jid?.includes('@newsletter') || jid === 'status@broadcast',
-
-        // Prevents issues with message buttons and list messages on some WA versions
-        patchMessageBeforeSending: (message) => {
-            const requiresPatch = !!(
-                message.buttonsMessage ||
-                message.templateMessage ||
-                message.listMessage
-            );
-            if (requiresPatch) {
-                message = {
-                    viewOnceMessage: {
-                        message: {
-                            messageContextInfo: {
-                                deviceListMetadata: {},
-                                deviceListMetadataVersion: 2
-                            },
-                            ...message
-                        }
-                    }
-                };
-            }
-            return message;
-        },
-
-        // 🔄 MESSAGE RECOVERY
-        getMessage: async (key) => {
-            if (store) {
-                const msg = await store.loadMessage(key.remoteJid, key.id);
-                return msg?.message || undefined;
-            }
-            return { conversation: "Message recovery in progress..." };
-        }
+        syncFullHistory: false,
+        shouldIgnoreJid: (jid) => jid?.includes('@newsletter') || jid === 'status@broadcast'
     });
 
     if (store) store.bind(sock.ev);
@@ -323,17 +284,9 @@ async function startBot() {
             isStarting = false;
 
             if (reason === DisconnectReason.loggedOut) {
-                // Check if this is a REAL logout or just a conflict
-                const isConflict = errorMsg.includes('conflict') || errorMsg.includes('device_removed') || errorMsg.includes('replaced');
-                if (isConflict) {
-                    console.log(chalk.yellow("⚠️ Conflict detected (401). Restarting without purge..."));
-                    sock.end();
-                    process.exit(1);
-                } else {
-                    console.log(chalk.red("🛑 Real Logout. Clearing session."));
-                    fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
-                    process.exit(0);
-                }
+                console.log(chalk.red("🛑 Logged Out. Clearing session."));
+                fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
+                process.exit(0);
             } else if (reason === DisconnectReason.connectionReplaced || reason === 440 || reason === 405) {
                 console.log(chalk.red("⚠️ Session Conflict. Restarting..."));
                 sock.end();
@@ -364,8 +317,6 @@ async function startBot() {
         if (type !== "notify") return;
         const msg = messages[0];
 
-        // 2. Ignore messages sent before the bot was turned on
-        if (msg.messageTimestamp < botStartTime) return;
 
         // 3. Ignore your own messages (Optional, but often preferred for bots)
         // if (msg.key.fromMe) return;
@@ -523,10 +474,19 @@ async function startBot() {
                     const reply = await getAIResponse(prompt);
 
                     await sock.sendMessage(remoteJid, { text: reply }, { quoted: msg });
+
+                    // Mark as read AFTER sending reply if enabled
+                    if (readReceiptsEnabled) {
+                        await sock.readMessages([msg.key]);
+                    }
                 } catch (err) {
                     console.error("[AI] Error:", err.message);
                     const errorMsg = "Merci de m'avoir contacté. Mon propriétaire vous répondra dès qu'il sera disponible.";
                     await sock.sendMessage(remoteJid, { text: `*✅ Message Reçu*\n\n${errorMsg}` }, { quoted: msg });
+
+                    if (readReceiptsEnabled) {
+                        await sock.readMessages([msg.key]);
+                    }
                 }
             }
         }
@@ -578,6 +538,22 @@ async function startBot() {
         if (text.startsWith(PREFIX)) {
             const args = text.slice(PREFIX.length).trim().split(/ +/);
             const commandName = args.shift().toLowerCase();
+
+            // Special Handle for internal state toggles
+            if (commandName === 'readreceipts') {
+                if (isFromOwner) {
+                    const toggle = args[0]?.toLowerCase();
+                    if (toggle === 'on') readReceiptsEnabled = true;
+                    else if (toggle === 'off') readReceiptsEnabled = false;
+                    else readReceiptsEnabled = !readReceiptsEnabled;
+
+                    await sock.sendMessage(remoteJid, { text: `✅ Read Receipts: *${readReceiptsEnabled ? 'ON' : 'OFF'}*` }, { quoted: msg });
+                } else {
+                    await sock.sendMessage(remoteJid, { text: "❌ Owner only." }, { quoted: msg });
+                }
+                return;
+            }
+
             const command = commands.get(commandName);
 
             if (command) {
