@@ -547,7 +547,7 @@ async function startBot() {
     });
 
 
-    const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
+
 
     // Reaction Handler for ViewOnce Extraction (Incognito)
     sock.ev.on("messages.reaction", async (reactions) => {
