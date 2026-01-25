@@ -77,6 +77,7 @@ async function notifyOwner(text) {
 
 let reconnectAttempts = 0;
 let isStarting = false;
+let isSyncing = false; // Backlog Shield Flag
 let latestQR = null;
 let lastConnectedAt = 0;
 let sock = null;
@@ -243,10 +244,13 @@ async function startBot() {
         printQRInTerminal: true,
         markOnlineOnConnect: true,
         generateHighQualityLinkPreview: true,
-        connectTimeoutMs: 90000, // 90s for slow local network
-        keepAliveIntervalMs: 30000, // 30s heartbeat
-        syncFullHistory: false,            // Skip downloading GBs of old messages
-        shouldSyncHistoryMessage: () => false, // 🚫 Don't process old history
+        connectTimeoutMs: 120000, 
+        keepAliveIntervalMs: 15000, 
+        syncFullHistory: false,            
+        shouldSyncHistoryMessage: () => false, 
+        
+        // 🧪 Handshake Hardening
+        getMessage: async (key) => { return { conversation: "Syncing..." } },
 
         shouldIgnoreJid: (jid) => jid?.includes('@newsletter') || jid === 'status@broadcast',
 
@@ -288,7 +292,10 @@ async function startBot() {
 
     if (store) store.bind(sock.ev);
 
-    sock.ev.on("creds.update", saveCreds);
+    sock.ev.on("creds.update", async () => {
+        await saveCreds();
+        console.log(chalk.gray("💾 Credentials updated."));
+    });
 
     let criticalErrorCount = 0;
 
@@ -345,13 +352,13 @@ async function startBot() {
                 // Check if this is a REAL logout or just a conflict
                 const isConflict = errorMsg.includes('conflict') || errorMsg.includes('device_removed') || errorMsg.includes('replaced');
                 if (isConflict) {
-                    console.log(chalk.yellow("⚠️ Conflict detected. Reconnecting..."));
+                    console.log(chalk.yellow("⚠️ Conflict detected. Reconnecting in 10s..."));
                     sock.end();
-                    setTimeout(() => startBot(), 5000);
+                    setTimeout(() => startBot(), 10000);
                 } else {
-                    console.log(chalk.red("🛑 Session invalide ou déconnectée. Suppression..."));
-                    fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
-                    process.exit(0);
+                    console.log(chalk.red("🛑 Session logged out. (Folder purge disabled for manual recovery)"));
+                    // fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
+                    process.exit(1);
                 }
             } else {
                 reconnectAttempts++;
@@ -371,19 +378,25 @@ async function startBot() {
             criticalErrorCount = 0; // Reset error counter on success
             isStarting = false;
             lastConnectedAt = Date.now();
-            console.log(chalk.green.bold("\n✅ PSYCHOBOT ONLINE AND CONNECTED !"));
+            isSyncing = true; // Activate Shield
+            console.log(chalk.green.bold("\n✅ PSYCHOBOT ONLINE !"));
+            console.log(chalk.cyan("🛡️ Backlog Shield Active: Ignoring old messages for 1 minute..."));
+
+            setTimeout(() => {
+                isSyncing = false;
+                console.log(chalk.green("�️ Backlog Shield Deactivated: Ready for new messages."));
+            }, 60000);
 
             const user = sock.user.id.split(':')[0];
             broadcast({ type: 'connected', user });
-
-            const msgText = `*✅ 𝗦𝗲𝘀𝘀𝗶𝗼𝗻 𝗖𝗼𝗻𝗻𝗲𝗰𝘁𝗲𝗱!* \n\n🤖 *Bot:* ${BOT_NAME}\n📱 *User:* ${user}\n🔋 *Mode:* Core V2\n⏰ *Time:* ${new Date().toLocaleTimeString()}`;
-            await sock.sendMessage(sock.user.id, { text: msgText });
         }
     });
 
     sock.ev.on("messages.upsert", async ({ messages, type }) => {
         if (type !== "notify") return;
+        if (isSyncing) return; // 🛡️ SHIELD: REJECT ALL DURING SYNC
         const msg = messages[0];
+
 
         // 2. Ignore messages sent before the bot was turned on
         if (msg.messageTimestamp < botStartTime) return;
