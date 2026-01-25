@@ -209,13 +209,13 @@ async function startBot() {
     }
 
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
-    const silentLogger = pino({ level: 'silent' });
+    const silentLogger = pino({ level: 'debug' }); // FULL DEBUG LOGS
+
 
     console.log(chalk.gray("🌐 Récupération de la version WhatsApp Web..."));
-    // Fetch version with a strict 10s timeout to avoid hanging indefinitely
     let version;
     try {
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 20000));
         const fetchResult = await Promise.race([
             fetchLatestBaileysVersion(),
             timeoutPromise
@@ -228,20 +228,23 @@ async function startBot() {
 
     console.log(chalk.gray(`📦 Version Baileys: ${version}`));
 
+
+
     sock = makeWASocket({
         version,
         auth: {
             creds: state.creds,
-            // 🚀 Performance: Speeds up decryption & auth on Render
             keys: makeCacheableSignalKeyStore(state.keys, silentLogger),
         },
         logger: silentLogger,
-        // 💻 DESKTOP IDENTITY (Fixes Conflict 401)
         browser: Browsers.macOS('Desktop'),
-        printQRInTerminal: false,
-        markOnlineOnConnect: false, // Stealth Mode
+
+
+        printQRInTerminal: true,
+        markOnlineOnConnect: true,
         generateHighQualityLinkPreview: true,
-        connectTimeoutMs: 60000,
+        connectTimeoutMs: 90000, // 90s for slow local network
+        keepAliveIntervalMs: 30000, // 30s heartbeat
         syncFullHistory: false,            // Skip downloading GBs of old messages
         shouldSyncHistoryMessage: () => false, // 🚫 Don't process old history
 
@@ -280,23 +283,7 @@ async function startBot() {
         }
     });
 
-    // --- PAIRING CODE LOGIC ---
-    if (!sock.authState.creds.registered) {
-        const phoneNumber = OWNER_PN;
-        if (phoneNumber) {
-            console.log(chalk.cyan(`\n🔗 Tentative de connexion via code de jumelage pour: ${phoneNumber}`));
-            setTimeout(async () => {
-                try {
-                    let code = await sock.requestPairingCode(phoneNumber);
-                    code = code?.match(/.{1,4}/g)?.join("-") || code;
-                    console.log(chalk.black.bgGreen(`\n VOTRE CODE DE JUMELAGE : ${code} \n`));
-                    broadcast({ type: 'pairing_code', code: code });
-                } catch (err) {
-                    console.error("Erreur lors de la génération du code de jumelage:", err);
-                }
-            }, 3000);
-        }
-    }
+
 
 
     if (store) store.bind(sock.ev);
@@ -306,11 +293,14 @@ async function startBot() {
     let criticalErrorCount = 0;
 
     sock.ev.on("connection.update", async (update) => {
-        const { connection, lastDisconnect, qr } = update;
+        const { connection, lastDisconnect, qr, isNewLogin } = update;
 
         if (connection) {
             console.log(chalk.blue(`📡 Status: ${connection}`));
         }
+
+        if (isNewLogin) console.log(chalk.green("✨ New login detected."));
+
 
         if (qr) {
             // Safety: Only show QR if we are definitely NOT connected
@@ -334,7 +324,8 @@ async function startBot() {
             const errorMsg = lastDisconnect?.error?.message || "";
             const isCritical = errorMsg.includes("PreKey") || errorMsg.includes("Bad MAC") || errorMsg.includes("Session error");
 
-            console.log(chalk.red(`❌ Connection Closed: ${reason || 'Unknown'}`));
+            console.log(chalk.red(`❌ Connection Closed. Code: ${reason} | Error: ${errorMsg}`));
+
 
             if (isCritical) {
                 criticalErrorCount++;
@@ -354,18 +345,14 @@ async function startBot() {
                 // Check if this is a REAL logout or just a conflict
                 const isConflict = errorMsg.includes('conflict') || errorMsg.includes('device_removed') || errorMsg.includes('replaced');
                 if (isConflict) {
-                    console.log(chalk.yellow("⚠️ Conflict detected (401). Restarting without purge..."));
+                    console.log(chalk.yellow("⚠️ Conflict detected. Reconnecting..."));
                     sock.end();
-                    process.exit(1);
+                    setTimeout(() => startBot(), 5000);
                 } else {
                     console.log(chalk.red("🛑 Session invalide ou déconnectée. Suppression..."));
                     fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
                     process.exit(0);
                 }
-            } else if (reason === DisconnectReason.connectionReplaced || reason === 440 || reason === 405) {
-                console.log(chalk.red("⚠️ Session Conflict. Restarting..."));
-                sock.end();
-                process.exit(1);
             } else {
                 reconnectAttempts++;
                 lastConnectedAt = 0;
