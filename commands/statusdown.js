@@ -10,20 +10,30 @@ module.exports = {
         try {
             const remoteJid = msg.key.remoteJid;
 
-            // Vérifie si on répond à un statut
+            // Vérifie si on répond à un message
             const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
             if (!quoted) {
                 return await replyWithTag(sock, remoteJid, msg, "⚠️ Vous devez répondre à un statut avec cette commande.");
             }
 
-            const statusMessage = Object.values(quoted)[0]; // récupère photoMessage ou videoMessage
-            const mediaType = statusMessage.imageMessage ? "image" : statusMessage.videoMessage ? "video" : null;
+            // Extraire le vrai message (peut être dans viewOnceMessage, ephemeralMessage, ou direct)
+            let realMsg = quoted.viewOnceMessage?.message ||
+                quoted.viewOnceMessageV2?.message ||
+                quoted.ephemeralMessage?.message ||
+                quoted;
 
-            if (!mediaType) {
+            // Détecter le type de média
+            const imageMsg = realMsg.imageMessage;
+            const videoMsg = realMsg.videoMessage;
+
+            if (!imageMsg && !videoMsg) {
                 return await replyWithTag(sock, remoteJid, msg, "⚠️ Le message répondu n'est pas un statut photo ou vidéo.");
             }
 
-            const stream = await downloadContentFromMessage(quoted, mediaType);
+            const mediaType = imageMsg ? "image" : "video";
+            const mediaMsg = imageMsg || videoMsg;
+
+            const stream = await downloadContentFromMessage(mediaMsg, mediaType);
             const chunks = [];
             for await (const chunk of stream) chunks.push(chunk);
 
