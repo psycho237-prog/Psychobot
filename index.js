@@ -546,117 +546,116 @@ async function startBot() {
         }
     });
 
-});
 
-const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
+    const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 
-// Reaction Handler for ViewOnce Extraction (Incognito)
-sock.ev.on("messages.reaction", async (reactions) => {
-    const cleanJid = (jid) => jid ? jid.split(':')[0].split('@')[0] : "";
+    // Reaction Handler for ViewOnce Extraction (Incognito)
+    sock.ev.on("messages.reaction", async (reactions) => {
+        const cleanJid = (jid) => jid ? jid.split(':')[0].split('@')[0] : "";
 
-    for (const reaction of reactions) {
-        const { key } = reaction;
+        for (const reaction of reactions) {
+            const { key } = reaction;
 
-        // SECURITY: Only extraction if the reactor is the Owner
-        const reactor = reaction.key.fromMe ? sock.user.id : (reaction.key.participant || reaction.key.remoteJid);
-        const reactorClean = cleanJid(reactor);
-        const isOwner = reaction.key.fromMe || reactorClean === OWNER_PN || OWNER_LIDS.includes(reactorClean);
+            // SECURITY: Only extraction if the reactor is the Owner
+            const reactor = reaction.key.fromMe ? sock.user.id : (reaction.key.participant || reaction.key.remoteJid);
+            const reactorClean = cleanJid(reactor);
+            const isOwner = reaction.key.fromMe || reactorClean === OWNER_PN || OWNER_LIDS.includes(reactorClean);
 
-        if (!isOwner) continue;
+            if (!isOwner) continue;
 
-        const archivedMsg = messageCache.get(key.id);
-        if (archivedMsg) {
-            let content = archivedMsg.message;
-            if (content.ephemeralMessage) content = content.ephemeralMessage.message;
-            const viewOnce = content?.viewOnceMessage || content?.viewOnceMessageV2 || content?.viewOnceMessageV2Extension;
+            const archivedMsg = messageCache.get(key.id);
+            if (archivedMsg) {
+                let content = archivedMsg.message;
+                if (content.ephemeralMessage) content = content.ephemeralMessage.message;
+                const viewOnce = content?.viewOnceMessage || content?.viewOnceMessageV2 || content?.viewOnceMessageV2Extension;
 
-            if (viewOnce) {
-                console.log(`[ViewOnce] Owner extraction trigger (Reaction) for ${key.id}`);
-                try {
-                    const viewOnceContent = viewOnce.message;
-                    const mediaType = Object.keys(viewOnceContent).find(k => k.includes('Message'));
-                    if (!mediaType) return;
-
-                    const mediaData = viewOnceContent[mediaType];
-                    const stream = await downloadContentFromMessage(mediaData, mediaType.replace('Message', ''));
-                    let buffer = Buffer.from([]);
-                    for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
-
-                    const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-                    const caption = `🔓 *ViewOnce Extracted* (From: ${archivedMsg.pushName || 'Inconnu'})`;
-                    const type = mediaType.replace('Message', '');
-                    const options = { jpegThumbnail: null };
-
-                    if (type === 'image') await sock.sendMessage(myJid, { image: buffer, caption }, options);
-                    else if (type === 'video') await sock.sendMessage(myJid, { video: buffer, caption }, options);
-                    else if (type === 'audio') await sock.sendMessage(myJid, { audio: buffer, mimetype: 'audio/mp4', ptt: true });
-
-                } catch (err) {
-                    console.error("[Incognito Reaction] Error:", err.message);
-                }
-            }
-        }
-    }
-});
-
-// --- AI CALL HANDLER (Smart Digital Secretary) ---
-sock.ev.on('call', async (callEvents) => {
-    for (const call of callEvents) {
-        // Check for missed, rejected or timeout statuses
-        if (call.status === 'timeout' || call.status === 'rejected' || call.status === 'missed') {
-            const callerId = call.from;
-            console.log(chalk.yellow(`[Call] Missed/Rejected call from ${callerId}`));
-
-            try {
-                // 1. Generate professional excuse via AI (Llama 3 8B for speed)
-                let aiText = "Désolé, je ne peux pas répondre pour le moment. Je vous rappelle dès que possible.";
-
-                if (groq) {
+                if (viewOnce) {
+                    console.log(`[ViewOnce] Owner extraction trigger (Reaction) for ${key.id}`);
                     try {
-                        const chatCompletion = await groq.chat.completions.create({
-                            messages: [
-                                {
-                                    role: "system",
-                                    content: "Tu es l'assistant de PSYCHO-BOT. Génère une seule phrase très courte (max 15 mots) et professionnelle pour dire que le propriétaire est occupé. Pas d'humour, reste sérieux."
-                                }
-                            ],
-                            model: "llama3-8b-8192",
-                        });
-                        aiText = chatCompletion.choices[0]?.message?.content || aiText;
-                    } catch (aiErr) {
-                        console.error('[Call AI Error]:', aiErr.message);
+                        const viewOnceContent = viewOnce.message;
+                        const mediaType = Object.keys(viewOnceContent).find(k => k.includes('Message'));
+                        if (!mediaType) return;
+
+                        const mediaData = viewOnceContent[mediaType];
+                        const stream = await downloadContentFromMessage(mediaData, mediaType.replace('Message', ''));
+                        let buffer = Buffer.from([]);
+                        for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
+
+                        const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+                        const caption = `🔓 *ViewOnce Extracted* (From: ${archivedMsg.pushName || 'Inconnu'})`;
+                        const type = mediaType.replace('Message', '');
+                        const options = { jpegThumbnail: null };
+
+                        if (type === 'image') await sock.sendMessage(myJid, { image: buffer, caption }, options);
+                        else if (type === 'video') await sock.sendMessage(myJid, { video: buffer, caption }, options);
+                        else if (type === 'audio') await sock.sendMessage(myJid, { audio: buffer, mimetype: 'audio/mp4', ptt: true });
+
+                    } catch (err) {
+                        console.error("[Incognito Reaction] Error:", err.message);
                     }
                 }
-
-                // 2. Convert to Voice Note (Google TTS)
-                const audioUrl = googleTTS.getAudioUrl(aiText, {
-                    lang: 'fr',
-                    slow: false,
-                    host: 'https://translate.google.com',
-                });
-
-                // 3. Send Voice Note to Caller
-                await sock.sendMessage(callerId, {
-                    audio: { url: audioUrl },
-                    mimetype: 'audio/mp4',
-                    ptt: true
-                });
-
-                // 4. Notify Owner
-                const ownerJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-                await sock.sendMessage(ownerJid, {
-                    text: `📞 *Appel Manqué (Auto-Reply)*\n━━━━━━━━━━━━━━\n👤 *De:* @${callerId.split('@')[0]}\n📝 *Assistant:* "${aiText.trim()}"`,
-                    mentions: [callerId]
-                });
-
-                console.log(`✅ Missed call handled with AI Voice Note: "${aiText}"`);
-
-            } catch (err) {
-                console.error("[Call Handler Error]:", err.message);
             }
         }
-    }
-});
+    });
+
+    // --- AI CALL HANDLER (Smart Digital Secretary) ---
+    sock.ev.on('call', async (callEvents) => {
+        for (const call of callEvents) {
+            // Check for missed, rejected or timeout statuses
+            if (call.status === 'timeout' || call.status === 'rejected' || call.status === 'missed') {
+                const callerId = call.from;
+                console.log(chalk.yellow(`[Call] Missed/Rejected call from ${callerId}`));
+
+                try {
+                    // 1. Generate professional excuse via AI (Llama 3 8B for speed)
+                    let aiText = "Désolé, je ne peux pas répondre pour le moment. Je vous rappelle dès que possible.";
+
+                    if (groq) {
+                        try {
+                            const chatCompletion = await groq.chat.completions.create({
+                                messages: [
+                                    {
+                                        role: "system",
+                                        content: "Tu es l'assistant de PSYCHO-BOT. Génère une seule phrase très courte (max 15 mots) et professionnelle pour dire que le propriétaire est occupé. Pas d'humour, reste sérieux."
+                                    }
+                                ],
+                                model: "llama3-8b-8192",
+                            });
+                            aiText = chatCompletion.choices[0]?.message?.content || aiText;
+                        } catch (aiErr) {
+                            console.error('[Call AI Error]:', aiErr.message);
+                        }
+                    }
+
+                    // 2. Convert to Voice Note (Google TTS)
+                    const audioUrl = googleTTS.getAudioUrl(aiText, {
+                        lang: 'fr',
+                        slow: false,
+                        host: 'https://translate.google.com',
+                    });
+
+                    // 3. Send Voice Note to Caller
+                    await sock.sendMessage(callerId, {
+                        audio: { url: audioUrl },
+                        mimetype: 'audio/mp4',
+                        ptt: true
+                    });
+
+                    // 4. Notify Owner
+                    const ownerJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+                    await sock.sendMessage(ownerJid, {
+                        text: `📞 *Appel Manqué (Auto-Reply)*\n━━━━━━━━━━━━━━\n👤 *De:* @${callerId.split('@')[0]}\n📝 *Assistant:* "${aiText.trim()}"`,
+                        mentions: [callerId]
+                    });
+
+                    console.log(`✅ Missed call handled with AI Voice Note: "${aiText}"`);
+
+                } catch (err) {
+                    console.error("[Call Handler Error]:", err.message);
+                }
+            }
+        }
+    });
 }
 
 // --- Anti-Idle (Keep Alive) ---
