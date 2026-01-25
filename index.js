@@ -681,7 +681,17 @@ server.listen(PORT, () => {
     startBot();
 });
 
-process.on('uncaughtException', (err) => {
-    console.error('Critical Error:', err);
-    // setTimeout(() => startBot(), 10000); // Only restart if needed, process exit typically better for container
+process.on('uncaughtException', (error) => {
+    const msg = error?.message || String(error);
+    const ignorableErrors = ['Connection Closed', 'Timed Out', 'conflict', 'Stream Errored', 'Bad MAC', 'No session found', 'No matching sessions', 'EPIPE', 'ECONNRESET', 'PreKeyError', 'rate-overlimit'];
+    if (ignorableErrors.some(e => msg.includes(e))) return;
+    console.error('Critical Uncaught Exception:', error);
+    // process.exit(1); 
+});
+
+process.on('unhandledRejection', (reason) => {
+    const msg = reason?.message || String(reason);
+    const ignorableErrors = ['Connection Closed', 'Timed Out', 'conflict', 'Stream Errored', 'Bad MAC', 'No session found', 'No matching sessions', 'EPIPE', 'ECONNRESET', 'PreKeyError', 'rate-overlimit'];
+    if (ignorableErrors.some(e => msg.includes(e))) return;
+    console.error('Unhandled Rejection at:', reason);
 });
