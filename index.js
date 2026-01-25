@@ -180,9 +180,15 @@ async function startBot() {
     header();
     broadcast({ type: 'status', message: 'Starting Bot...' });
 
-    // 🏎️ NO JITTER: Immediate connection for speed
+    // 🚀 STABILIZATION (Short Jitter)
+    const isRender = process.env.RENDER || process.env.RENDER_URL;
+    if (reconnectAttempts === 0 && isRender) {
+        console.log(chalk.yellow(`⏳ STABILISATION (2s)...`));
+        await sleep(2000);
+    }
     console.log(chalk.cyan("🚀 Connexion au socket WhatsApp..."));
     broadcast({ type: 'status', message: 'Connecting...' });
+
 
 
     // Ensure session folder exists
@@ -208,9 +214,20 @@ async function startBot() {
 
 
 
-    // 🚀 ULTRA-FAST BOOT: Hardware Baileys version to avoid slow network fetch
-    const version = [2, 3000, 1015901307];
+    console.log(chalk.gray("🌐 Récupération de la version WhatsApp Web..."));
+    let version;
+    try {
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
+        const fetchResult = await Promise.race([
+            fetchLatestBaileysVersion(),
+            timeoutPromise
+        ]);
+        version = fetchResult.version;
+    } catch (e) {
+        version = [2, 3000, 1015901307];
+    }
     console.log(chalk.gray(`📦 Version Baileys: ${version.join('.')}`));
+
 
 
 
@@ -226,13 +243,14 @@ async function startBot() {
 
 
         printQRInTerminal: true,
-        markOnlineOnConnect: false, // 🏎️ Skip online notification (faster)
-        generateHighQualityLinkPreview: false, // 🏎️ Skip overhead previews
+        markOnlineOnConnect: true, 
+        generateHighQualityLinkPreview: true, 
         connectTimeoutMs: 120000,
         keepAliveIntervalMs: 20000,
         syncFullHistory: false,
         shouldSyncHistoryMessage: () => false,
-        preloadGroupParticipants: false, // 🏎️ Skip pre-fetching thousands of members
+        preloadGroupParticipants: true, 
+
 
         // 🔄 MESSAGE RECOVERY (Consolidated)
         getMessage: async (key) => {
