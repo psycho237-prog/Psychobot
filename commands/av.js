@@ -1,4 +1,5 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const axios = require('axios');
 
 const genAI = new GoogleGenerativeAI('AIzaSyCaqZKBKdBLTRgOtX7cvAycZZTQSlD639c');
 
@@ -6,72 +7,74 @@ async function getAIResponse(prompt) {
     try {
         const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
         const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const text = response.text();
+        const text = result.response.text();
+        if (text && text.trim().length > 5) return text.trim();
+    } catch (e) { console.error('[Gemini 2.5] Failed'); }
 
-        if (text && text.trim().length > 5) {
-            return text.trim();
-        }
-        return null;
-    } catch (error) {
-        console.error('[Gemini Error]:', error.message);
-        return null;
+    try {
+        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        const result = await model.generateContent(prompt);
+        const text = result.response.text();
+        if (text && text.trim().length > 5) return text.trim();
+    } catch (e) { console.error('[Gemini 1.5] Failed'); }
+
+    const apis = [
+        { url: `https://api.bk9.site/ai/gpt4?q=${encodeURIComponent(prompt)}`, extract: (d) => d.BK9 },
+        { url: `https://api.maher-zubair.tech/ai/chatgpt?q=${encodeURIComponent(prompt)}`, extract: (d) => d.result },
+        { url: `https://api.vreden.my.id/api/gpt4?text=${encodeURIComponent(prompt)}`, extract: (d) => d.result || d.reply },
+        { url: `https://widipe.com/gpt?prompt=${encodeURIComponent(prompt)}`, extract: (d) => d.result },
+        { url: `https://api.kimis.tech/ai/gpt?q=${encodeURIComponent(prompt)}`, extract: (d) => d.result },
+        { url: `https://hercai.onrender.com/v3/hercai?question=${encodeURIComponent(prompt)}`, extract: (d) => d.reply },
+        { url: `https://api.popcat.xyz/chatbot?msg=${encodeURIComponent(prompt)}`, extract: (d) => d.response }
+    ];
+
+    for (const api of apis) {
+        try {
+            const res = await axios.get(api.url, { timeout: 15000 });
+            const result = api.extract(res.data);
+            if (result && result.trim().length > 5) return result.trim();
+        } catch (e) { continue; }
     }
+    return null;
 }
 
 module.exports = {
-    name: 'av',
-    description: 'Obtenez une Action ou une Vérité générée par IA.',
-    run: async ({ sock, msg, args, replyWithTag }) => {
-        const type = args[0]?.toLowerCase();
-        const from = msg.key.remoteJid;
+    name: "av",
+    description: "Jeu Action ou Vérité (Automatique).",
+    run: async ({ sock, msg, args, replyWithTag, isGroup, isAdmins }) => {
+        const remoteJid = msg.key.remoteJid;
+        const type = args[0] ? args[0].toLowerCase() : null;
 
         if (type !== 'action' && type !== 'vérité' && type !== 'verite') {
-            return replyWithTag(sock, from, msg, "🔞 *Jeu Action ou Vérité (ADULTE/18+)*\n\nUtilisation:\n- `!av action` : Pour un défi osé/trash\n- `!av vérité` : Pour une question sans tabou");
+            const menu = `*🔞 JEU ACTION OU VÉRITÉ 🔞*\n\n` +
+                `Prêt à pimenter votre groupe ? Utilisez :\n` +
+                `👉 *!av action* : Pour un défi osé.\n` +
+                `👉 *!av vérité* : Pour une question indiscrète.\n\n` +
+                `⚠️ *Réservé aux adultes (+18).*`;
+            return await replyWithTag(sock, remoteJid, msg, menu);
         }
 
-        const isAction = type === 'action';
-        await replyWithTag(sock, from, msg, `🪄 L'IA concocte un truc ${isAction ? 'bien chaud' : 'très indiscret'}...`);
-
-        // Randomize the context to avoid repetitions
-        const themes = ["secret inavouable", "ex-partenaires", "fantasmes", "situations gênantes", "corps et physique", "vie nocturne", "mensonges", "première fois"];
-        const randomTheme = themes[Math.floor(Math.random() * themes.length)];
-
-        const prompt = isAction
-            ? `Donne moi un défi 'Action' unique, très osé, embarrassant et pour adultes (18+) sur le thème : ${randomTheme}. Sois trash, explicite et court (une phrase). Change radicalement de sujet.`
-            : `Pose moi une question 'Vérité' unique, très indiscrète, sexuelle ou embarrassante pour adultes (18+) sur le thème : ${randomTheme}. Sois trash, explicite et direct (une phrase). Change radicalement de sujet.`;
-
         try {
-            let challenge = await getAIResponse(prompt);
+            await replyWithTag(sock, remoteJid, msg, `🔥 L'IA prépare votre ${type}...`);
+
+            const prompt = `Génère un défi ou une question de type "${type}" pour un jeu "Action ou Vérité". Le public est adulte et le ton doit être amusant, provocateur et engageant. Donne juste le texte de l'action ou de la vérité, sans blabla autour.`;
+
+            const challenge = await getAIResponse(prompt);
 
             if (!challenge) {
-                // Expanded Fallbacks
-                const actions = [
-                    "Sucer son propre pouce en imitant un bébé pendant 1 minute.",
-                    "Faire une simulation d'orgasme en note vocale.",
-                    "Envoyer un message à ton ex pour lui dire 'Tu me manques'.",
-                    "Raconte ton fantasme le plus sale au groupe.",
-                    "Envoie une photo de tes sous-vêtements (ou décris-les en détail).",
-                    "Appelle un contact au hasard et gémis au téléphone.",
-                    "Mets une photo de profil sexy pendant 1 heure."
-                ];
-                const truths = [
-                    "Quelle est ta position préférée au lit ?",
-                    "Quel est ton fantasme le plus inavouable ?",
-                    "As-tu déjà fait ça dans un lieu public ?",
-                    "Avec qui dans ce groupe aimerais-tu passer une nuit ?",
-                    "Quelle est la chose la plus dégoûtante que tu aies faite au lit ?",
-                    "As-tu déjà été surpris en plein acte ?",
-                    "Quel est le plus grand nombre de partenaires que tu as eu ?"
-                ];
-                challenge = isAction ? actions[Math.floor(Math.random() * actions.length)] : truths[Math.floor(Math.random() * truths.length)];
+                return await replyWithTag(sock, remoteJid, msg, "❌ Désolé, l'IA est timide aujourd'hui. Réessayez !");
             }
 
-            const header = isAction ? "🔥 *ACTION*" : "📝 *VÉRITÉ*";
-            await sock.sendMessage(from, { text: `${header}\n\n${challenge}` }, { quoted: msg });
+            const finalMsg = `*🔞 ACTION OU VÉRITÉ 🔞*\n\n` +
+                `*Type:* ${type.toUpperCase()}\n` +
+                `*Challenge:* ${challenge}\n\n` +
+                `Alors, cap ou pas cap ? 😏`;
+
+            await sock.sendMessage(remoteJid, { text: finalMsg }, { quoted: msg });
 
         } catch (err) {
-            await replyWithTag(sock, from, msg, "❌ Erreur lors de la génération du défi.");
+            console.error(err);
+            await replyWithTag(sock, remoteJid, msg, "❌ Une erreur est survenue.");
         }
     }
 };

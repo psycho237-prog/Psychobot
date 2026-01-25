@@ -18,20 +18,50 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const genAI = new GoogleGenerativeAI('AIzaSyCaqZKBKdBLTRgOtX7cvAycZZTQSlD639c');
 
 async function getAIResponse(prompt) {
+    // 1. Essayer Gemini 2.5 Flash (Meilleure qualité)
     try {
         const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
         const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const text = response.text();
-
-        if (text && text.trim().length > 0) {
-            return text.trim();
-        }
-        return "Désolé, je n'ai pas pu générer de réponse.";
+        const text = result.response.text();
+        if (text && text.trim().length > 0) return text.trim();
     } catch (error) {
-        console.error('[Gemini Error]:', error.message);
-        return "Désolé, l'IA est temporairement indisponible. Réessayez plus tard !";
+        console.error('[Gemini 2.5 Error]: Quota atteint ou erreur.');
     }
+
+    // 2. Fallback vers Gemini 1.5 Flash (Plus stable)
+    try {
+        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        const result = await model.generateContent(prompt);
+        const text = result.response.text();
+        if (text && text.trim().length > 0) return text.trim();
+    } catch (error) {
+        console.error('[Gemini 1.5 Error]: Quota atteint ou erreur.');
+    }
+
+    // 3. Fallback ultime vers la flotte de proxys gratuits
+    console.log('[AI] Passage au mode Redondance (Proxys)...');
+    const apis = [
+        { url: `https://api.bk9.site/ai/gpt4?q=${encodeURIComponent(prompt)}`, extract: (d) => d.BK9 },
+        { url: `https://api.maher-zubair.tech/ai/chatgpt?q=${encodeURIComponent(prompt)}`, extract: (d) => d.result },
+        { url: `https://api.vreden.my.id/api/gpt4?text=${encodeURIComponent(prompt)}`, extract: (d) => d.result || d.reply },
+        { url: `https://widipe.com/gpt?prompt=${encodeURIComponent(prompt)}`, extract: (d) => d.result },
+        { url: `https://api.kimis.tech/ai/gpt?q=${encodeURIComponent(prompt)}`, extract: (d) => d.result },
+        { url: `https://api.agatz.xyz/api/gpt4?message=${encodeURIComponent(prompt)}`, extract: (d) => d.data },
+        { url: `https://sh-api-one.vercel.app/api/gpt?q=${encodeURIComponent(prompt)}`, extract: (d) => d.answer },
+        { url: `https://hercai.onrender.com/v3/hercai?question=${encodeURIComponent(prompt)}`, extract: (d) => d.reply },
+        { url: `https://api.popcat.xyz/chatbot?msg=${encodeURIComponent(prompt)}`, extract: (d) => d.response },
+        { url: `https://api.simsimi.net/v2/?text=${encodeURIComponent(prompt)}&lc=fr`, extract: (d) => d.success }
+    ];
+
+    for (const api of apis) {
+        try {
+            const res = await axios.get(api.url, { timeout: 10000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+            const result = api.extract(res.data);
+            if (result && result.trim().length > 2) return result.trim();
+        } catch (e) { continue; }
+    }
+
+    return "Désolé, toutes mes sources IA sont saturées. Réessayez dans un instant !";
 }
 
 // --- Configuration ---
