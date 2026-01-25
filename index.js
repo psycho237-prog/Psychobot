@@ -163,11 +163,11 @@ async function startBot() {
     header();
     broadcast({ type: 'status', message: 'Starting Bot...' });
 
-    // RENDER SETTLING DELAY
+    // RENDER SETTLING DELAY (Optimized for Conflict Prevention)
     const isRender = process.env.RENDER || process.env.RENDER_URL;
     if (reconnectAttempts === 0 && isRender) {
-        const jitter = Math.floor(Math.random() * 5000); // 5s jitter sufficient
-        console.log(chalk.yellow(`⏳ STABILISATION (${jitter}ms jitter)...`));
+        const jitter = Math.floor(Math.random() * 10000) + 15000; // 15-25s delay
+        console.log(chalk.yellow(`⏳ STABILISATION RENDER (${jitter}ms)...`));
         await sleep(jitter);
     }
 
@@ -219,14 +219,18 @@ async function startBot() {
             keys: makeCacheableSignalKeyStore(state.keys, logger),
         },
         logger,
-        browser: ["Ubuntu", "Chrome", "20.0.04"],
-        printQRInTerminal: false, // Avoid deprecation warning
+        browser: ['Psychobot-V2', 'Chrome', '121.0.0'],
+        printQRInTerminal: false,
         markOnlineOnConnect: true,
         generateHighQualityLinkPreview: true,
         connectTimeoutMs: 60000,
-        defaultQueryTimeoutMs: 0,
+        defaultQueryTimeoutMs: 60000,
+        keepAliveIntervalMs: 30000,
         syncFullHistory: false,
-        shouldIgnoreJid: (jid) => jid?.includes('@newsletter') || jid === 'status@broadcast'
+        shouldIgnoreJid: (jid) => jid?.includes('@newsletter') || jid === 'status@broadcast',
+        getMessage: async (key) => {
+            return { conversation: '' };
+        }
     });
 
     sock.ev.on("creds.update", saveCreds);
@@ -279,9 +283,17 @@ async function startBot() {
             isStarting = false;
 
             if (reason === DisconnectReason.loggedOut) {
-                console.log(chalk.red("🛑 Logged Out. Clearing session."));
-                fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
-                process.exit(0);
+                // Check if this is a REAL logout or just a conflict
+                const isConflict = errorMsg.includes('conflict') || errorMsg.includes('device_removed') || errorMsg.includes('replaced');
+                if (isConflict) {
+                    console.log(chalk.yellow("⚠️ Conflict detected (401). Restarting without purge..."));
+                    sock.end();
+                    process.exit(1);
+                } else {
+                    console.log(chalk.red("🛑 Real Logout. Clearing session."));
+                    fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
+                    process.exit(0);
+                }
             } else if (reason === DisconnectReason.connectionReplaced || reason === 440 || reason === 405) {
                 console.log(chalk.red("⚠️ Session Conflict. Restarting..."));
                 sock.end();
