@@ -1,8 +1,11 @@
 services:
   - type: web
-    name: psychobot
-    env: node
+    name: psychobot-v2
+    env: docker
     region: oregon
     plan: free
-    buildCommand: "npm install"
-    startCommand: "node index.js"
+    healthCheckPath: /
+    envVars:
+      - key: PORT
+        value: 10000
+
