@@ -180,16 +180,10 @@ async function startBot() {
     header();
     broadcast({ type: 'status', message: 'Starting Bot...' });
 
-    // RENDER SETTLING DELAY
-    const isRender = process.env.RENDER || process.env.RENDER_URL;
-    if (reconnectAttempts === 0 && isRender) {
-        const jitter = Math.floor(Math.random() * 5000); // 5s jitter sufficient
-        console.log(chalk.yellow(`⏳ STABILISATION (${jitter}ms jitter)...`));
-        await sleep(jitter);
-    }
-
+    // 🏎️ NO JITTER: Immediate connection for speed
     console.log(chalk.cyan("🚀 Connexion au socket WhatsApp..."));
-    broadcast({ type: 'status', message: 'Connecting to WhatsApp...' });
+    broadcast({ type: 'status', message: 'Connecting...' });
+
 
     // Ensure session folder exists
     if (!fs.existsSync(AUTH_FOLDER)) fs.mkdirSync(AUTH_FOLDER, { recursive: true });
@@ -210,24 +204,14 @@ async function startBot() {
     }
 
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
-    const silentLogger = pino({ level: 'debug' }); // FULL DEBUG LOGS
+    const silentLogger = pino({ level: 'silent' }); // SILENT FOR MAX SPEED
 
 
-    console.log(chalk.gray("🌐 Récupération de la version WhatsApp Web..."));
-    let version;
-    try {
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 20000));
-        const fetchResult = await Promise.race([
-            fetchLatestBaileysVersion(),
-            timeoutPromise
-        ]);
-        version = fetchResult.version;
-    } catch (e) {
-        console.log(chalk.yellow("⚠️ Timeout version, utilisation du fallback."));
-        version = [2, 3000, 1015901307];
-    }
 
-    console.log(chalk.gray(`📦 Version Baileys: ${version}`));
+    // 🚀 ULTRA-FAST BOOT: Hardware Baileys version to avoid slow network fetch
+    const version = [2, 3000, 1015901307];
+    console.log(chalk.gray(`📦 Version Baileys: ${version.join('.')}`));
+
 
 
 
@@ -242,19 +226,26 @@ async function startBot() {
 
 
         printQRInTerminal: true,
-        markOnlineOnConnect: true,
-        generateHighQualityLinkPreview: true,
-        connectTimeoutMs: 120000, 
-        keepAliveIntervalMs: 15000, 
-        syncFullHistory: false,            
-        shouldSyncHistoryMessage: () => false, 
-        
-        // 🧪 Handshake Hardening
-        getMessage: async (key) => { return { conversation: "Syncing..." } },
+        markOnlineOnConnect: false, // 🏎️ Skip online notification (faster)
+        generateHighQualityLinkPreview: false, // 🏎️ Skip overhead previews
+        connectTimeoutMs: 120000,
+        keepAliveIntervalMs: 20000,
+        syncFullHistory: false,
+        shouldSyncHistoryMessage: () => false,
+        preloadGroupParticipants: false, // 🏎️ Skip pre-fetching thousands of members
+
+        // 🔄 MESSAGE RECOVERY (Consolidated)
+        getMessage: async (key) => {
+            if (store) {
+                const msg = await store.loadMessage(key.remoteJid, key.id);
+                return msg?.message || { conversation: "Syncing..." };
+            }
+            return { conversation: "Syncing..." };
+        },
 
         shouldIgnoreJid: (jid) => jid?.includes('@newsletter') || jid === 'status@broadcast',
+        defaultQueryTimeoutMs: 120000,
 
-        // Prevents issues with message buttons and list messages on some WA versions
         patchMessageBeforeSending: (message) => {
             const requiresPatch = !!(
                 message.buttonsMessage ||
@@ -275,15 +266,6 @@ async function startBot() {
                 };
             }
             return message;
-        },
-
-        // 🔄 MESSAGE RECOVERY
-        getMessage: async (key) => {
-            if (store) {
-                const msg = await store.loadMessage(key.remoteJid, key.id);
-                return msg?.message || undefined;
-            }
-            return { conversation: "Psychobot is recovering this message..." };
         }
     });
 
@@ -789,9 +771,10 @@ if (process.env.RENDER || process.env.RENDER_URL || process.env.KEEP_ALIVE) {
     }, PING_INTERVAL);
 }
 
-loadCommands();
 server.listen(PORT, () => {
     console.log(chalk.blue(`[Server] Port ${PORT} lié.`));
+    // 🏎️ Parallel Init: Load commands and start bot at the same time
+    loadCommands();
     startBot();
 });
 
