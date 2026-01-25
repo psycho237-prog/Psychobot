@@ -238,7 +238,7 @@ async function startBot() {
         logger: silentLogger,
         // 💻 DESKTOP IDENTITY (Fixes Conflict 401)
         browser: Browsers.macOS('Desktop'),
-        printQRInTerminal: true,
+        printQRInTerminal: false,
         markOnlineOnConnect: false, // Stealth Mode
         generateHighQualityLinkPreview: true,
         connectTimeoutMs: 60000,
@@ -319,7 +319,7 @@ async function startBot() {
                 return;
             }
             latestQR = qr;
-            console.log(chalk.yellow(`[QR] New code generated.`));
+            // console.log(chalk.yellow(`[QR] New code generated.`));
             try {
                 const url = await QRCode.toDataURL(qr);
                 broadcast({ type: 'qr', qr: url });
