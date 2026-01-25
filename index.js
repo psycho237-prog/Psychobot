@@ -13,35 +13,32 @@ const http = require('http');
 const bodyParser = require("body-parser");
 const os = require('os');
 const axios = require('axios');
+require('dotenv').config();
+const Groq = require("groq-sdk");
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
 async function getAIResponse(prompt) {
-    // 1. Input Validation
     if (!prompt || typeof prompt !== 'string') {
         return "Please provide a valid prompt.";
     }
 
     try {
-        const llamaApi = `https://api.bk9.site/ai/llama3?q=${encodeURIComponent(prompt)}`;
-
-        // 2. Axios Request
-        const res = await axios.get(llamaApi, {
-            timeout: 20000, // Slightly longer for LLM latency
-            headers: { 'Accept': 'application/json' }
+        const chatCompletion = await groq.chat.completions.create({
+            "messages": [
+                { "role": "system", "content": "You are a helpful assistant." },
+                { "role": "user", "content": prompt }
+            ],
+            "model": "llama-3.3-70b-versatile",
+            "temperature": 0.7,
+            "max_tokens": 1024,
+            "top_p": 1,
+            "stream": false
         });
 
-        // 3. Structured Data Validation
-        const responseData = res.data?.BK9;
-        if (responseData) {
-            return responseData.trim();
-        }
-
-        throw new Error("Empty response payload");
-
+        return chatCompletion.choices[0].message.content.trim();
     } catch (error) {
-        // 4. Enhanced Error Feedback
-        if (error.code === 'ECONNABORTED') return "⏳ Request timed out.";
-        if (error.response?.status === 429) return "⏳ Too many requests. Please try again later.";
-
-        console.error('[Llama 3 Error]:', error.message);
+        console.error('[Groq Error]:', error.message);
+        if (error.status === 429) return "⏳ Too many requests. Please try again later.";
         return "Sorry, I'm having trouble connecting to the AI right now.";
     }
 }
@@ -339,7 +336,7 @@ async function startBot() {
         // Skip if message is from the bot itself or the owner
         const msgSender = msg.key.participant || msg.participant || msg.key.remoteJid;
         const msgSenderClean = msgSender.split(':')[0].split('@')[0];
-        const isFromOwner = msg.key.fromMe || (OWNER_PN && msgSenderClean === OWNER_PN);
+        const isFromOwner = msg.key.fromMe || msgSenderClean === OWNER_PN || OWNER_LIDS.includes(msgSenderClean);
 
         // Text extraction
         const text = msg.message?.conversation ||
@@ -523,7 +520,7 @@ async function startBot() {
             // SECURITY: Only extraction if the reactor is the Owner
             const reactor = reaction.key.fromMe ? sock.user.id : (reaction.key.participant || reaction.key.remoteJid);
             const reactorClean = cleanJid(reactor);
-            const isOwner = reaction.key.fromMe || (OWNER_PN && reactorClean === OWNER_PN);
+            const isOwner = reaction.key.fromMe || reactorClean === OWNER_PN || OWNER_LIDS.includes(reactorClean);
 
             if (!isOwner) continue;
 

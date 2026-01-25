@@ -1,47 +1,40 @@
-const axios = require('axios');
+const Groq = require("groq-sdk");
+require('dotenv').config();
+
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 async function getAIResponse(prompt) {
-    // 1. Input Validation
-    if (!prompt || typeof prompt !== 'string') {
-        return "Please provide a valid prompt.";
-    }
+    if (!prompt || typeof prompt !== 'string') return "Invalid.";
 
     try {
-        const llamaApi = `https://api.bk9.site/ai/llama3?q=${encodeURIComponent(prompt)}`;
-
-        // 2. Axios Request
-        const res = await axios.get(llamaApi, {
-            timeout: 20000,
-            headers: { 'Accept': 'application/json' }
+        const chatCompletion = await groq.chat.completions.create({
+            "messages": [
+                { "role": "system", "content": "You are a helpful assistant. Keep your answer concise (max 500 chars)." },
+                { "role": "user", "content": prompt }
+            ],
+            "model": "llama-3.3-70b-versatile",
+            "temperature": 0.7,
+            "max_tokens": 512,
+            "top_p": 1,
+            "stream": false
         });
 
-        // 3. Structured Data Validation
-        const responseData = res.data?.BK9;
-        if (responseData) {
-            return responseData.trim();
-        }
-
-        throw new Error("Empty response payload");
-
+        return chatCompletion.choices[0].message.content.trim();
     } catch (error) {
-        // 4. Enhanced Error Feedback
-        if (error.code === 'ECONNABORTED') return "⏳ Request timed out.";
-        if (error.response?.status === 429) return "⏳ Too many requests. Please try again later.";
-
-        console.error('[Llama 3 Error]:', error.message);
-        return "Sorry, I'm having trouble connecting to the AI right now.";
+        console.error('[Groq Error]:', error.message);
+        return "I'm sorry, I can't generate a voice response right now.";
     }
 }
 
 module.exports = {
     name: "aisay",
-    description: "L'IA vous répond par message vocal (TTS).",
+    description: "L'IA vous répond par message vocal (Llama 3.3).",
     run: async ({ sock, msg, args, replyWithTag }) => {
         const question = args.join(" ");
         if (!question) return replyWithTag(sock, msg.key.remoteJid, msg, "❌ Veuillez poser une question.");
 
         try {
-            await replyWithTag(sock, msg.key.remoteJid, msg, "🗣️ L'IA prépare son message vocal...");
+            await replyWithTag(sock, msg.key.remoteJid, msg, "🗣️ L'IA réfléchit...");
             const reply = await getAIResponse(question);
 
             const encoded = encodeURIComponent(reply.substring(0, 500));
@@ -55,7 +48,7 @@ module.exports = {
 
         } catch (error) {
             console.error(error);
-            await replyWithTag(sock, msg.key.remoteJid, msg, "❌ Erreur: Impossible de générer la réponse vocale.");
+            await replyWithTag(sock, msg.key.remoteJid, msg, "❌ Impossible de générer la voix.");
         }
     }
 };
