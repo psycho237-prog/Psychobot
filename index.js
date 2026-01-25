@@ -13,6 +13,7 @@ const http = require('http');
 const bodyParser = require("body-parser");
 const os = require('os');
 const axios = require('axios');
+const cron = require('node-cron');
 const googleTTS = require('google-tts-api');
 require('dotenv').config();
 const Groq = require("groq-sdk");
@@ -135,15 +136,10 @@ app.use(bodyParser.urlencoded({ extended: true }));
 const __path = process.cwd();
 app.use('/pair', (req, res) => res.sendFile(__path + '/pair.html'));
 app.use('/qr', (req, res) => res.sendFile(__path + '/qr.html'));
-app.get('/', (req, res) => res.sendFile(__path + '/index.html'));
+app.get('/', (req, res) => res.send('Psycho Bot Factory is Online! 🏭🚀'));
 
 // Health check endpoint
-app.get('/ping', (req, res) => res.status(200).json({
-    status: 'alive',
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString(),
-    service: BOT_NAME
-}));
+app.get('/health', (req, res) => res.status(200).send('OK'));
 
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
@@ -176,17 +172,10 @@ async function startBot() {
     if (isStarting) return;
     isStarting = true;
 
-    header();
-    broadcast({ type: 'status', message: 'Starting Bot...' });
-
-    // 🚀 STABILIZATION (Short Jitter)
-    const isRender = process.env.RENDER || process.env.RENDER_URL;
-    if (reconnectAttempts === 0 && isRender) {
-        console.log(chalk.yellow(`⏳ STABILISATION (2s)...`));
-        await sleep(2000);
-    }
-    console.log(chalk.cyan("🚀 Connexion au socket WhatsApp..."));
+    // 🚀 MAX SPEED: Immediate connection
+    process.stdout.write(chalk.cyan("🚀 Connecting to WhatsApp Socket...\n"));
     broadcast({ type: 'status', message: 'Connecting...' });
+
 
 
 
@@ -238,15 +227,15 @@ async function startBot() {
             keys: makeCacheableSignalKeyStore(state.keys, silentLogger),
         },
         logger: silentLogger,
-        browser: Browsers.macOS('Chrome'), 
+        browser: Browsers.macOS('Chrome'),
         printQRInTerminal: true,
-        markOnlineOnConnect: true, 
+        markOnlineOnConnect: true,
         generateHighQualityLinkPreview: false,
         connectTimeoutMs: 60000,
-        keepAliveIntervalMs: 25000, 
-        syncFullHistory: false,            
-        shouldSyncHistoryMessage: () => false, 
-        preloadGroupParticipants: false, 
+        keepAliveIntervalMs: 25000,
+        syncFullHistory: false,
+        shouldSyncHistoryMessage: () => false,
+        preloadGroupParticipants: false,
 
 
         // 🔄 MESSAGE RECOVERY (Consolidated)
@@ -764,20 +753,19 @@ async function startBot() {
 }
 
 // --- Anti-Idle (Keep Alive) ---
-const PING_INTERVAL = 2 * 60 * 1000; // 2 minutes (Fixed for Render)
-
-// Force keep-alive if on Render (auto-detect) or explicitly enabled
-if (process.env.RENDER || process.env.RENDER_URL || process.env.KEEP_ALIVE) {
-    console.log(chalk.blue("🔄 Auto-Ping Activated to keep bot alive."));
-    setInterval(() => {
-        const url = `http://localhost:${PORT}`;
-        http.get(`${url}/ping`, (res) => {
-            if (res.statusCode !== 200) {
-                console.error(`[Keep-Alive] Internal Ping Failed: ${res.statusCode}`);
-            }
-        }).on('error', (e) => console.error(`[Keep-Alive] Error: ${e.message}`));
-    }, PING_INTERVAL);
-}
+// Self-ping to keep alive on Render
+cron.schedule('*/10 * * * *', async () => {
+    try {
+        const renderUrl = process.env.RENDER_URL;
+        if (renderUrl) {
+            const url = renderUrl.endsWith('/') ? renderUrl : `${renderUrl}/`;
+            await axios.get(`${url}ping`);
+            console.log(chalk.gray('🔄 Factory Keep-alive successful'));
+        }
+    } catch (error) {
+        console.error(chalk.red('❌ Factory Keep-alive failed:'), error.message);
+    }
+});
 
 server.listen(PORT, () => {
     console.log(chalk.blue(`[Server] Port ${PORT} lié.`));
@@ -799,15 +787,15 @@ process.on('SIGTERM', async () => {
 
 process.on('uncaughtException', (error) => {
     const msg = error?.message || String(error);
-    const ignorableErrors = ['Connection Closed', 'Timed Out', 'conflict', 'Stream Errored', 'Bad MAC', 'No session found', 'No matching sessions', 'EPIPE', 'ECONNRESET', 'PreKeyError', 'rate-overlimit'];
+    const ignorableErrors = ['Connection Closed', 'Timed Out', 'conflict', 'Stream Errored', 'Bad MAC', 'No session found', 'No matching sessions', 'EPIPE', 'ECONNRESET', 'PreKeyError'];
     if (ignorableErrors.some(e => msg.includes(e))) return;
-    console.error('Critical Uncaught Exception:', error);
-    // process.exit(1); 
+    console.error('Uncaught Exception:', error);
+    process.exit(1);
 });
 
 process.on('unhandledRejection', (reason) => {
     const msg = reason?.message || String(reason);
-    const ignorableErrors = ['Connection Closed', 'Timed Out', 'conflict', 'Stream Errored', 'Bad MAC', 'No session found', 'No matching sessions', 'EPIPE', 'ECONNRESET', 'PreKeyError', 'rate-overlimit'];
+    const ignorableErrors = ['Connection Closed', 'Timed Out', 'conflict', 'Stream Errored', 'Bad MAC', 'No session found', 'No matching sessions', 'EPIPE', 'ECONNRESET', 'PreKeyError'];
     if (ignorableErrors.some(e => msg.includes(e))) return;
     console.error('Unhandled Rejection at:', reason);
 });
