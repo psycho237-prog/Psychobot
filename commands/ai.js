@@ -29,13 +29,13 @@ async function getAIResponse(prompt) {
 
 module.exports = {
     name: 'ai',
-    description: 'Posez une question à Meta Llama 3 (via Groq)',
+    description: 'Posez une question à l\'IA.',
     run: async ({ sock, msg, args, replyWithTag }) => {
         const question = args.join(" ");
         if (!question) return replyWithTag(sock, msg.key.remoteJid, msg, "❌ Posez une question. Ex: !ai Bonjour");
 
         try {
-            await replyWithTag(sock, msg.key.remoteJid, msg, "🤔 Réflexion (Llama 3)...");
+            await replyWithTag(sock, msg.key.remoteJid, msg, "🤔 Réflexion en cours...");
             const reply = await getAIResponse(question);
             await replyWithTag(sock, msg.key.remoteJid, msg, reply);
         } catch (error) {

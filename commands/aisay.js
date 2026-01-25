@@ -28,13 +28,13 @@ async function getAIResponse(prompt) {
 
 module.exports = {
     name: "aisay",
-    description: "L'IA vous répond par message vocal (Llama 3.3).",
+    description: "L'IA vous répond par message vocal.",
     run: async ({ sock, msg, args, replyWithTag }) => {
         const question = args.join(" ");
         if (!question) return replyWithTag(sock, msg.key.remoteJid, msg, "❌ Veuillez poser une question.");
 
         try {
-            await replyWithTag(sock, msg.key.remoteJid, msg, "🗣️ L'IA réfléchit...");
+            await replyWithTag(sock, msg.key.remoteJid, msg, "🗣️ L'IA analyse votre requête...");
             const reply = await getAIResponse(question);
 
             const encoded = encodeURIComponent(reply.substring(0, 500));

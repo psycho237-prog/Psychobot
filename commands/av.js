@@ -28,7 +28,7 @@ async function getAIResponse(prompt) {
 
 module.exports = {
     name: "av",
-    description: "Jeu Action ou Vérité (Automatique via Llama 3.3).",
+    description: "Jeu Action ou Vérité (Automatique).",
     run: async ({ sock, msg, args, replyWithTag, isGroup, isAdmins }) => {
         const remoteJid = msg.key.remoteJid;
         const type = args[0] ? args[0].toLowerCase() : null;
@@ -36,21 +36,31 @@ module.exports = {
         if (type !== 'action' && type !== 'vérité' && type !== 'verite') {
             const menu = `*🔞 JEU ACTION OU VÉRITÉ 🔞*\n\n` +
                 `Prêt à pimenter votre groupe ? Utilisez :\n` +
-                `👉 *!av action* : Pour un défi osé.\n` +
-                `👉 *!av vérité* : Pour une question indiscrète.\n\n` +
-                `⚠️ *Réservé aux adultes (+18).*`;
+                `👉 *!av action* : Pour un défi.\n` +
+                `👉 *!av vérité* : Pour une question.\n\n` +
+                `⚠️ *Amusant, Culturel ou Osé !*`;
             return await replyWithTag(sock, remoteJid, msg, menu);
         }
 
         try {
-            await replyWithTag(sock, remoteJid, msg, `🔥 L'IA (Llama 3.3) prépare votre ${type}...`);
+            await replyWithTag(sock, remoteJid, msg, `🔥 Préparation de votre ${type}...`);
 
-            const prompt = `Génère un défi ou une question de type "${type}" pour un jeu "Action ou Vérité". Le public est adulte et le ton doit être amusant, provocateur et engageant. Donne juste le texte de l'action ou de la vérité, sans blabla autour.`;
+            // Prompt polyvalent : Mixe humour, culture, et adulte
+            const prompt = `Tu es l'animateur d'un jeu Action ou Vérité ultra-polyvalent. 
+            Génère une seule proposition de type "${type}". 
+            VARIE LES PLAISIRS de manière aléatoire parmi ces styles :
+            1. DRÔLE & ENGAGEANT (ex: Imiter un animal, raconter une honte).
+            2. CULTURE GÉNÉRALE (ex: Citer 3 pays d'Asie, une question piège).
+            3. PROVOCATEUR & ADULTE (ex: Un secret osé, un défi sexy).
+            4. SOCIAL (ex: Envoyer un message bizarre à un contact).
+            
+            Le ton doit être dynamique. Ne cite jamais ton modèle (Llama, AI, etc.). 
+            Donne UNIQUEMENT le texte de l'action ou de la vérité.`;
 
             const challenge = await getAIResponse(prompt);
 
             if (!challenge) {
-                return await replyWithTag(sock, remoteJid, msg, "❌ Désolé, l'IA est timide aujourd'hui. Réessayez !");
+                return await replyWithTag(sock, remoteJid, msg, "❌ L'IA est indisponible. Réessayez !");
             }
 
             const finalMsg = `*🔞 ACTION OU VÉRITÉ 🔞*\n\n` +
