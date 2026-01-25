@@ -22,7 +22,7 @@ async function getAIResponse(prompt) {
             if (result && result.trim().length > 2) return result.trim();
         } catch (e) { continue; }
     }
-    throw new Error("Toutes les sources IA sont saturées.");
+    return "Désolé, toutes les IA sont saturées. Réessayez plus tard !";
 }
 
 module.exports = {

@@ -26,7 +26,7 @@ async function getAIResponse(prompt) {
             continue;
         }
     }
-    throw new Error("Toutes les IA sont saturées. Réessayez plus tard !");
+    return "Désolé, toutes les IA sont saturées. Réessayez plus tard !";
 }
 
 module.exports = {
