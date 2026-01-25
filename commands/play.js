@@ -1,11 +1,12 @@
 const fs = require('fs');
 const path = require('path');
-const yts = require('yt-search');
-const axios = require('axios');
+const { exec } = require('child_process');
+const { promisify } = require('util');
+const execAsync = promisify(exec);
 
 module.exports = {
     name: 'play',
-    description: "Recherche et télécharge une musique YouTube.",
+    description: "Recherche et télécharge une musique YouTube avec yt-dlp.",
     run: async ({ sock, msg, args, replyWithTag }) => {
         const query = args.join(" ");
         const from = msg.key.remoteJid;
@@ -17,50 +18,60 @@ module.exports = {
 
         try {
             await replyWithTag(sock, from, msg, `🔎 Recherche de "${query}"...`);
-            const search = await yts(query);
-            const video = search.videos[0];
 
-            if (!video) return replyWithTag(sock, from, msg, "❌ Aucun résultat trouvé.");
+            // Recherche avec yt-dlp (plus fiable que yts)
+            const searchCmd = `yt-dlp "ytsearch:${query}" --get-id --get-title --get-duration --cookies-from-browser firefox --no-warnings --quiet`;
+            const { stdout: searchOutput } = await execAsync(searchCmd);
 
-            const infoText = `🎵 *Audio trouvé :* ${video.title}\n👤 *Artiste :* ${video.author.name}\n⏱️ *Durée :* ${video.timestamp}`;
-            await sock.sendMessage(from, { text: infoText }, { quoted: msg });
-
-            await replyWithTag(sock, from, msg, "⏳ Préparation du téléchargement...");
-
-            // Use a public reliable API for conversion
-            const dlApi = `https://api.vreden.my.id/api/ytmp3?url=${encodeURIComponent(video.url)}`;
-            const res = await axios.get(dlApi);
-
-            if (!res.data || !res.data.result || !res.data.result.download) {
-                // Fallback to second API
-                const dlApi2 = `https://api.agatz.xyz/api/ytmp3?url=${encodeURIComponent(video.url)}`;
-                const res2 = await axios.get(dlApi2);
-                if (!res2.data || !res2.data.data || !res2.data.data.download) {
-                    throw new Error("API Down");
-                }
-                var downloadUrl = res2.data.data.download;
-            } else {
-                var downloadUrl = res.data.result.download;
+            const lines = searchOutput.trim().split('\n');
+            if (lines.length < 3) {
+                return replyWithTag(sock, from, msg, "❌ Aucun résultat trouvé.");
             }
 
-            const fileName = `audio_${Date.now()}.mp3`;
-            const filePath = path.join(tempDir, fileName);
+            const videoTitle = lines[0];
+            const videoDuration = lines[1];
+            const videoId = lines[2];
+            const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-            const fileRes = await axios.get(downloadUrl, { responseType: 'arraybuffer' });
-            fs.writeFileSync(filePath, Buffer.from(fileRes.data));
+            const infoText = `🎵 *Audio trouvé :* ${videoTitle}\n⏱️ *Durée :* ${videoDuration}`;
+            await sock.sendMessage(from, { text: infoText }, { quoted: msg });
+
+            await replyWithTag(sock, from, msg, "⏳ Téléchargement en cours...");
+
+            // Télécharge avec yt-dlp + cookies du navigateur
+            const fileName = `audio_${Date.now()}`;
+            const outputPath = path.join(tempDir, fileName);
+
+            const downloadCmd = `yt-dlp "${videoUrl}" \
+                --cookies-from-browser firefox \
+                --extract-audio \
+                --audio-format mp3 \
+                --audio-quality 0 \
+                --output "${outputPath}.%(ext)s" \
+                --no-warnings \
+                --quiet`;
+
+            await execAsync(downloadCmd, { timeout: 120000 }); // 2 min timeout
+
+            const filePath = `${outputPath}.mp3`;
+
+            if (!fs.existsSync(filePath)) {
+                throw new Error("Le fichier téléchargé est introuvable.");
+            }
 
             await sock.sendMessage(from, {
                 audio: { url: filePath },
                 mimetype: 'audio/mp4',
-                fileName: video.title + ".mp3",
+                fileName: videoTitle + ".mp3",
                 ptt: false
             }, { quoted: msg });
 
+            // Nettoyage
             fs.unlinkSync(filePath);
 
         } catch (err) {
-            console.error(err);
-            await replyWithTag(sock, from, msg, "❌ Le téléchargement a échoué (Serveur saturé).");
+            console.error('[Play Error]:', err.message);
+            await replyWithTag(sock, from, msg, `❌ Le téléchargement a échoué: ${err.message}`);
         }
     }
 };
