@@ -1,95 +1,105 @@
-# 🤖 Psychobot V2: Final Core Edition
+# 🤖 PSYCHO BOT V2
 
-[![Status](https://img.shields.io/badge/Status-Operational-brightgreen?style=for-the-badge)]()
-[![WhatsApp](https://img.shields.io/badge/WhatsApp-Bot-25D366?style=for-the-badge&logo=whatsapp)]()
-[![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)]()
+[![Node.js](https://img.shields.io/badge/Node.js-%3E=20.0.0-green?logo=node.js&logoColor=white)](https://nodejs.org/) 
+[![Status](https://img.shields.io/badge/Status-Online-brightgreen)]()
+[![WhatsApp](https://img.shields.io/badge/WhatsApp-Bot-25D366?logo=whatsapp&logoColor=white)]()
 
-**Psychobot V2** is a professional-grade WhatsApp assistant built for speed, reliability, and entertainment. Powered by the latest **Baileys Core**, it features high-speed AI integration, robust media handling, and a modular command system. 
-
-> "Minimalist on the outside, powerful on the inside."
+**Psycho Bot V2** is a high-performance, multi-functional WhatsApp bot built for speed, utility, and elite group management. Powered by **Meta Llama 3** and **Groq**, it features professional-grade AI responses, audio transcriptions, and robust media tools.
 
 ---
 
-## 🌟 Creator & Portfolio
-Built with 💜 by **PSYCHO (Onana Grégoire Legrand)**.
-Explore my work and more tools on my portfolio:
-🌐 **[psycho.is-a.dev](https://psycho.is-a.dev)**
+## ✨ Key Features
+
+### 🧠 Advanced AI & Intelligence
+- **Llama 3 Powered**: Deep, intelligent conversations and greeting detection.
+- **Whisper VIP Transcription**: Ultra-fast, high-accuracy audio-to-text via Groq Whisper v3.
+- **Smart Call Assistant**: Automated AI-generated voice excuses for missed/rejected calls.
+- **Imagine AI**: Generate high-quality, watermarked images via Flux (Pollinations AI).
+- **Dynamic Translation**: Auto-detecting Google Translate system (supports 50+ languages).
+
+### 🎯 Core Functionality
+- **Dual Connection**: Pairing Code (Web) or QR Code support.
+- **Anti-Delete (Snitch Mode)**: Real-time recovery of deleted messages and media in groups.
+- **View-Once Stealth**: Extract view-once photos/videos by reacting to them.
+- **Auto Reactions**: Intelligent emoji interactions in all chats.
+- **Anti-Link**: Automated group protection against unwanted external links.
+
+### 🎮 Elite Command System
+- **Group Management**: Pro-level tools for admins (Promote, Demote, Kick, TagAll).
+- **YouTube Media**: High-speed song search and MP3 download with `!play`.
+- **Entertainment Hub**: Versatile Action or Vérité, specialized games, and audio filters.
+- **Status Pro**: Bulk download and specific status extraction tools.
 
 ---
 
-## 🔥 Elite Features
+## 📋 Prerequisites
 
-### 🧠 Integrated AI (GPT-4)
-*   **!ai [query]**: Instant smart responses using 6+ redundant AI providers.
-*   **Auto-Reply**: Automatically greets and responds politely to DM inquiries.
-*   **AI Game Engine**: Generates unique, funny challenges for games.
-
-### 🕵️ Stealth & Privacy
-*   **Incognito Extraction**: Reply to any "View Once" media with a dot `.` to have it sent privately to your box. No traces in the group.
-*   **Reaction Trigger**: React with an emoji to extract any View Once media instantly.
-
-### 🎮 The Game Center (`!listgame`)
-*   **!av [action/verite]**: AI-generated Action or Truth challenges.
-*   **!motgame**: A fast-paced scrambled word game.
-*   **!guess**: Try to beat the bot at guessing a number.
-*   **!coin**: Classic Flip a Coin.
-
-### 🎵 Multimedia Power
-*   **!play [song]**: Direct search and high-speed YouTube audio download.
-*   **!sticker**: Fast image/video to sticker conversion.
-*   **!transcript**: AI-powered audio-to-text conversion (Whisper STT).
-*   **!pp**: Steal any profile picture in high resolution.
-
-### 🛡️ Admin & Group Tools
-*   **Auto-View Status**: Automatically marks all contact statuses as "Seen" (Passive).
-*   **!kick / !promote / !demote**: Streamlined member management.
-*   **!tagall**: Mention everyone in the group with ease.
-*   **!delete**: Remove any message (Bot must be admin).
+- **Node.js** >= 20.0.0
+- **Docker** (Recommended for Render deployment to handle FFmpeg/Python)
+- **Groq API Key**: Essential for Llama 3 and Whisper features.
 
 ---
 
-## 🚀 One-Click Deployment
+## 🚀 Installation
 
-### 1. Direct Deploy (Render)
-1. Fork this repo.
-2. Create a **Web Service** on [Render](https://render.com).
-3. Build command: `npm install`
-4. Start command: `node index.js`
-5. Set Env Var: `PORT` = `10000`.
-
-### 2. DigitalOcean / VPS / Local
+### 1. Clone the Repository
 ```bash
-git clone https://github.com/psycho237-prog/Psychobot.git
-cd Psychobot
+git clone https://github.com/psycho237-prog/psychobot-v2.git
+cd psychobot-v2
+```
+
+### 2. Configure Environment
+Create a `.env` file:
+```env
+GROQ_API_KEY=your_groq_key_here
+PORT=10000
+```
+
+### 3. Start the Bot
+```bash
 npm install
-node index.js
+npm start
 ```
 
 ---
 
-## ⚙️ How to Master the Bot
+## 🌐 Deployment (Render)
 
-1.  **Ownership**: Whoever scans the QR code or uses the Pairing Code is defined as the **Master**. All admin tools (kick, demote, extract) are locked to the Master.
-2.  **Dashboard**: Navigate to your app URL (e.g., `http://localhost:10000`) to see the status and scan the QR code.
-3.  **Auto-Recovery**: If a session gets corrupted, Psychobot will automatically detect it, purge the old data, and present a new QR code for stability.
+For a 100% stable experience on Render, this bot uses **Docker**.
 
----
-
-## 📊 Technical Stack
-*   **Engine**: Baileys (Socketed)
-*   **Runtime**: Node.js v20+
-*   **Database**: Map-based caching (NoSQL performance)
-*   **Processing**: Sharp & FFmpeg
+1. Fork this repo.
+2. In Render, create a **Web Service**.
+3. Render will auto-detect the `render.yaml` and `Dockerfile`.
+4. **Important**: Add `GROQ_API_KEY` in the Render Environment settings.
+5. Deploy.
 
 ---
 
-## 🤝 XYBERCLAN Support
-Join our community for updates and support!
-*   **GitHub**: [@psycho237-prog](https://github.com/psycho237-prog)
-*   **TikTok**: [@gregoire_legrand](https://www.tiktok.com/@gregoire_legrand)
-*   **LinkedIn**: [Onana Grégoire Legrand](https://www.linkedin.com/in/onana-gregoire-legrand-a18529282)
+## 🎨 Professional Commands
+
+| Command | Description |
+|---------|-------------|
+| `!ai` | Ask anything to the AI |
+| `!imagine` | Generate images with "PSYCHO-BOT" watermark |
+| `!transcript` | Transcribe voice notes (Reply to audio) |
+| `!translate` | Universal translator (Ex: `!translate en Bonjour`) |
+| `!play` | Search and download music directly from YouTube |
+| `!antidelete` | Enable real-time recovery of deleted group messages |
+| `!av` | Dynamic Action or Vérité game (Funny/Culture/Adult) |
 
 ---
 
-### ⭐ Give us a Star!
-If you like Psychobot, show some love by starring the repository! 🏆
+## 👨‍💻 Author
+
+**PSYCHO (Onana Grégoire Legrand)**
+
+- 🌐 GitHub: [@psycho237-prog](https://github.com/psycho237-prog)
+- 📱 TikTok: [@gregoire_legrand](https://www.tiktok.com/@gregoire_legrand)
+- 💼 LinkedIn: [Onana Grégoire Legrand](https://www.linkedin.com/in/onana-gregoire-legrand-a18529282)
+
+---
+
+## 🔥 XYBERCLAN
+**Built with 💜 by XYBERCLAN**
+
+⭐ **Star this repository if you enjoy using Psycho Bot V2!**
