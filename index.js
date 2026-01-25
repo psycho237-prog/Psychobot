@@ -13,35 +13,25 @@ const http = require('http');
 const bodyParser = require("body-parser");
 const os = require('os');
 const axios = require('axios');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+
+const genAI = new GoogleGenerativeAI('AIzaSyCaqZKBKdBLTRgOtX7cvAycZZTQSlD639c');
 
 async function getAIResponse(prompt) {
-    const apis = [
-        { url: `https://api.bk9.site/ai/gpt4?q=${encodeURIComponent(prompt)}`, extract: (d) => d.BK9 },
-        { url: `https://api.maher-zubair.tech/ai/chatgpt?q=${encodeURIComponent(prompt)}`, extract: (d) => d.result },
-        { url: `https://api.vreden.my.id/api/gpt4?text=${encodeURIComponent(prompt)}`, extract: (d) => d.result || d.reply },
-        { url: `https://widipe.com/gpt?prompt=${encodeURIComponent(prompt)}`, extract: (d) => d.result },
-        { url: `https://api.kimis.tech/ai/gpt?q=${encodeURIComponent(prompt)}`, extract: (d) => d.result },
-        { url: `https://api.agatz.xyz/api/gpt4?message=${encodeURIComponent(prompt)}`, extract: (d) => d.data },
-        { url: `https://sh-api-one.vercel.app/api/gpt?q=${encodeURIComponent(prompt)}`, extract: (d) => d.answer },
-        { url: `https://hercai.onrender.com/v3/hercai?question=${encodeURIComponent(prompt)}`, extract: (d) => d.reply },
-        { url: `https://api.popcat.xyz/chatbot?msg=${encodeURIComponent(prompt)}`, extract: (d) => d.response },
-        { url: `https://guruapi.tech/api/chatgpt?text=${encodeURIComponent(prompt)}`, extract: (d) => d.result },
-        { url: `https://api.simsimi.net/v2/?text=${encodeURIComponent(prompt)}&lc=fr`, extract: (d) => d.success }
-    ];
+    try {
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const text = response.text();
 
-    for (const api of apis) {
-        try {
-            console.log(`[AI] Trial: ${api.url.split('?')[0]}`);
-            const res = await axios.get(api.url, { timeout: 15000, headers: { 'User-Agent': 'Mozilla/5.0' } });
-            const result = api.extract(res.data);
-            if (result && result.trim().length > 2 && !result.toLowerCase().includes("limit") && !result.toLowerCase().includes("error")) {
-                return result.trim();
-            }
-        } catch (e) {
-            continue;
+        if (text && text.trim().length > 0) {
+            return text.trim();
         }
+        return "Désolé, je n'ai pas pu générer de réponse.";
+    } catch (error) {
+        console.error('[Gemini Error]:', error.message);
+        return "Désolé, l'IA est temporairement indisponible. Réessayez plus tard !";
     }
-    return "Désolé, mes sources IA sont saturées. Je répondrai dès que possible !";
 }
 
 // --- Configuration ---
