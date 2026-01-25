@@ -1,0 +1,16 @@
+node_modules/
+# session/ and creds.json removed to allow persistent connection push
+*.log
+.env
+bot.db
+temp/
+auth_info/
+.DS_Store
+*.db
+*.sqlite
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.vscode/
+.idea/
+baileys_store.json
