@@ -13,6 +13,7 @@ const http = require('http');
 const bodyParser = require("body-parser");
 const os = require('os');
 const axios = require('axios');
+const googleTTS = require('google-tts-api');
 require('dotenv').config();
 const Groq = require("groq-sdk");
 let groq;
@@ -593,6 +594,65 @@ sock.ev.on("messages.reaction", async (reactions) => {
                 } catch (err) {
                     console.error("[Incognito Reaction] Error:", err.message);
                 }
+            }
+        }
+    }
+});
+
+// --- AI CALL HANDLER (Smart Digital Secretary) ---
+sock.ev.on('call', async (callEvents) => {
+    for (const call of callEvents) {
+        // Check for missed, rejected or timeout statuses
+        if (call.status === 'timeout' || call.status === 'rejected' || call.status === 'missed') {
+            const callerId = call.from;
+            console.log(chalk.yellow(`[Call] Missed/Rejected call from ${callerId}`));
+
+            try {
+                // 1. Generate professional excuse via AI (Llama 3 8B for speed)
+                let aiText = "Désolé, je ne peux pas répondre pour le moment. Je vous rappelle dès que possible.";
+
+                if (groq) {
+                    try {
+                        const chatCompletion = await groq.chat.completions.create({
+                            messages: [
+                                {
+                                    role: "system",
+                                    content: "Tu es l'assistant de PSYCHO-BOT. Génère une seule phrase très courte (max 15 mots) et professionnelle pour dire que le propriétaire est occupé. Pas d'humour, reste sérieux."
+                                }
+                            ],
+                            model: "llama3-8b-8192",
+                        });
+                        aiText = chatCompletion.choices[0]?.message?.content || aiText;
+                    } catch (aiErr) {
+                        console.error('[Call AI Error]:', aiErr.message);
+                    }
+                }
+
+                // 2. Convert to Voice Note (Google TTS)
+                const audioUrl = googleTTS.getAudioUrl(aiText, {
+                    lang: 'fr',
+                    slow: false,
+                    host: 'https://translate.google.com',
+                });
+
+                // 3. Send Voice Note to Caller
+                await sock.sendMessage(callerId, {
+                    audio: { url: audioUrl },
+                    mimetype: 'audio/mp4',
+                    ptt: true
+                });
+
+                // 4. Notify Owner
+                const ownerJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+                await sock.sendMessage(ownerJid, {
+                    text: `📞 *Appel Manqué (Auto-Reply)*\n━━━━━━━━━━━━━━\n👤 *De:* @${callerId.split('@')[0]}\n📝 *Assistant:* "${aiText.trim()}"`,
+                    mentions: [callerId]
+                });
+
+                console.log(`✅ Missed call handled with AI Voice Note: "${aiText}"`);
+
+            } catch (err) {
+                console.error("[Call Handler Error]:", err.message);
             }
         }
     }
