@@ -211,23 +211,9 @@ async function startBot() {
 
 
 
-    console.log(chalk.gray("🌐 Récupération de la version WhatsApp Web..."));
-    let version;
-    try {
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
-        const fetchResult = await Promise.race([
-            fetchLatestBaileysVersion(),
-            timeoutPromise
-        ]);
-        version = fetchResult.version;
-    } catch (e) {
-        version = [2, 3000, 1015901307];
-    }
-    console.log(chalk.gray(`📦 Version Baileys: ${version.join('.')}`));
-
-
-
-
+    // 🚀 STABLE BOOT: Use proven version to avoid 405 handshake errors
+    const version = [2, 3000, 1015901307];
+    process.stdout.write(chalk.gray(`📦 Version Baileys: ${version.join('.')}\n`));
 
     sock = makeWASocket({
         version,
@@ -236,7 +222,7 @@ async function startBot() {
             keys: makeCacheableSignalKeyStore(state.keys, silentLogger),
         },
         logger: silentLogger,
-        browser: ['Ubuntu', 'Chrome', '20.0.04'], // Standard high-trust desktop array
+        browser: ['Ubuntu', 'Chrome', '121.0.0.0'], // High-trust array
         printQRInTerminal: false,
         markOnlineOnConnect: true,
         syncFullHistory: false,
@@ -308,14 +294,19 @@ async function startBot() {
 
         if (connection === "close") {
             const statusCode = lastDisconnect?.error?.output?.statusCode;
-            console.log(chalk.red(`❌ Connexion fermée (${statusCode || 'Unknown'})`));
+            const fullError = lastDisconnect?.error;
+            process.stdout.write(chalk.red(`❌ Connection Closed. Code: ${statusCode || 'Unknown'}\n`));
+
+            if (fullError) {
+                console.log(chalk.red(`📦 RAW DEBUG LOG:`), JSON.stringify(fullError, null, 2));
+            }
 
             broadcast({ type: 'status', message: `Disconnected: ${statusCode || 'Error'}` });
             isStarting = false;
 
             // 405 or 401: The session is toast. Clean purge and restart.
             if (statusCode === 401 || statusCode === 405) {
-                console.log(chalk.red("🛑 Session definitively invalid. Purging and restarting bot..."));
+                process.stdout.write(chalk.red("🛑 SESSION ERROR: Purging and requesting fresh QR...\n"));
                 if (fs.existsSync(AUTH_FOLDER)) fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
                 reconnectAttempts = 0;
                 process.exit(1);
@@ -725,8 +716,8 @@ cron.schedule('*/10 * * * *', async () => {
         const renderUrl = process.env.RENDER_URL;
         if (renderUrl) {
             const url = renderUrl.endsWith('/') ? renderUrl : `${renderUrl}/`;
-            await axios.get(`${url}ping`);
-            console.log(chalk.gray('🔄 Factory Keep-alive successful'));
+            await axios.get(`${url}health`);
+            process.stdout.write(chalk.gray('🔄 Factory Keep-alive successful\n'));
         }
     } catch (error) {
         console.error(chalk.red('❌ Factory Keep-alive failed:'), error.message);
