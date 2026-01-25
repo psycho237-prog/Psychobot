@@ -173,9 +173,16 @@ async function startBot() {
     if (isStarting) return;
     isStarting = true;
 
-    // 🚀 MAX SPEED: Immediate connection
+    // 🚀 RENDER GHOST-KILLER: Wait 15s for the old instance to die
+    const isRender = process.env.RENDER || process.env.RENDER_URL;
+    if (reconnectAttempts === 0 && isRender) {
+        process.stdout.write(chalk.yellow("⏳ Render detected: Waiting 15s to kill ghost instances...\n"));
+        await sleep(15000);
+    }
+
     process.stdout.write(chalk.cyan("🚀 Connecting to WhatsApp Socket...\n"));
     broadcast({ type: 'status', message: 'Connecting...' });
+
 
 
 
@@ -199,7 +206,8 @@ async function startBot() {
     }
 
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
-    const silentLogger = pino({ level: 'silent' }); // SILENT FOR MAX SPEED
+    const silentLogger = pino({ level: 'debug' }); // ENABLE FULL DEBUG LOGS
+
 
 
 
@@ -228,13 +236,13 @@ async function startBot() {
             keys: makeCacheableSignalKeyStore(state.keys, silentLogger),
         },
         logger: silentLogger,
-        browser: ['Ubuntu', 'Firefox', '121.0'],
-        printQRInTerminal: false, 
+        browser: ['Ubuntu', 'Chrome', '20.0.04'], // Standard high-trust desktop array
+        printQRInTerminal: false,
         markOnlineOnConnect: true,
         syncFullHistory: false,
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 60000,
-        keepAliveIntervalMs: 25000, 
+        keepAliveIntervalMs: 25000,
         getMessage: async (key) => {
             return { conversation: '' };
         },
@@ -289,7 +297,7 @@ async function startBot() {
         if (qr) {
             // Safety: Only show QR if we are definitely NOT connected
             if (connection === 'open') return;
-            
+
             latestQR = qr;
             try {
                 const url = await QRCode.toDataURL(qr);
@@ -305,9 +313,10 @@ async function startBot() {
             broadcast({ type: 'status', message: `Disconnected: ${statusCode || 'Error'}` });
             isStarting = false;
 
-            if (statusCode === 401) {
-                console.log(chalk.red("🛑 Session invalide. Purge et redémarrage..."));
-                fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
+            // 405 or 401: The session is toast. Clean purge and restart.
+            if (statusCode === 401 || statusCode === 405) {
+                console.log(chalk.red("🛑 Session definitively invalid. Purging and restarting bot..."));
+                if (fs.existsSync(AUTH_FOLDER)) fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
                 reconnectAttempts = 0;
                 process.exit(1);
             }
