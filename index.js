@@ -209,7 +209,7 @@ async function startBot() {
     }
 
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
-    const logger = pino({ level: 'info' });
+    const silentLogger = pino({ level: 'silent' });
 
     console.log(chalk.gray("🌐 Récupération de la version WhatsApp Web..."));
     // Fetch version with a strict 10s timeout to avoid hanging indefinitely
@@ -233,9 +233,9 @@ async function startBot() {
         auth: {
             creds: state.creds,
             // 🚀 Performance: Speeds up decryption & auth on Render
-            keys: makeCacheableSignalKeyStore(state.keys, logger),
+            keys: makeCacheableSignalKeyStore(state.keys, silentLogger),
         },
-        logger,
+        logger: silentLogger,
         // 💻 DESKTOP IDENTITY (Fixes Conflict 401)
         browser: Browsers.macOS('Desktop'),
         printQRInTerminal: true,
@@ -276,7 +276,7 @@ async function startBot() {
                 const msg = await store.loadMessage(key.remoteJid, key.id);
                 return msg?.message || undefined;
             }
-            return { conversation: "Message recovery in progress..." };
+            return { conversation: "Psychobot is recovering this message..." };
         }
     });
 
@@ -350,10 +350,18 @@ async function startBot() {
             broadcast({ type: 'status', message: `Disconnected: ${reason || 'Error'}` });
             isStarting = false;
 
-            if (reason === DisconnectReason.loggedOut) {
-                console.log(chalk.red("🛑 Logged Out. Clearing session."));
-                fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
-                process.exit(0);
+            if (reason === DisconnectReason.loggedOut || reason === 401) {
+                // Check if this is a REAL logout or just a conflict
+                const isConflict = errorMsg.includes('conflict') || errorMsg.includes('device_removed') || errorMsg.includes('replaced');
+                if (isConflict) {
+                    console.log(chalk.yellow("⚠️ Conflict detected (401). Restarting without purge..."));
+                    sock.end();
+                    process.exit(1);
+                } else {
+                    console.log(chalk.red("🛑 Session invalide ou déconnectée. Suppression..."));
+                    fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
+                    process.exit(0);
+                }
             } else if (reason === DisconnectReason.connectionReplaced || reason === 440 || reason === 405) {
                 console.log(chalk.red("⚠️ Session Conflict. Restarting..."));
                 sock.end();
