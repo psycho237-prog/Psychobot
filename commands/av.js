@@ -43,8 +43,6 @@ module.exports = {
         }
 
         try {
-            await replyWithTag(sock, remoteJid, msg, `🔥 Préparation de votre ${type}...`);
-
             // Prompt polyvalent : Mixe humour, culture, et adulte
             const prompt = `Tu es l'animateur d'un jeu Action ou Vérité ultra-polyvalent. 
             Génère une seule proposition de type "${type}". 

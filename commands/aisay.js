@@ -34,7 +34,6 @@ module.exports = {
         if (!question) return replyWithTag(sock, msg.key.remoteJid, msg, "❌ Veuillez poser une question.");
 
         try {
-            await replyWithTag(sock, msg.key.remoteJid, msg, "🗣️ L'IA analyse votre requête...");
             const reply = await getAIResponse(question);
 
             const encoded = encodeURIComponent(reply.substring(0, 500));

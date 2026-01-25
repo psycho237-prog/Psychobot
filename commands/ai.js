@@ -35,7 +35,6 @@ module.exports = {
         if (!question) return replyWithTag(sock, msg.key.remoteJid, msg, "❌ Posez une question. Ex: !ai Bonjour");
 
         try {
-            await replyWithTag(sock, msg.key.remoteJid, msg, "🤔 Réflexion en cours...");
             const reply = await getAIResponse(question);
             await replyWithTag(sock, msg.key.remoteJid, msg, reply);
         } catch (error) {
