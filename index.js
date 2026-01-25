@@ -163,12 +163,13 @@ async function startBot() {
     header();
     broadcast({ type: 'status', message: 'Starting Bot...' });
 
-    // RENDER SETTLING DELAY (Maximum Hardening)
+    // RENDER SETTLING DELAY (Extreme Hardening)
     const isRender = process.env.RENDER || process.env.RENDER_URL;
     if (reconnectAttempts === 0 && isRender) {
-        // Render wait time is usually 30s. We wait 30s to be absolutely sure.
-        console.log(chalk.yellow(`⏳ STABILISATION RENDER (30s Fixed Delay)...`));
-        await sleep(30000);
+        // Render containers can overlap significantly. 
+        // We wait 60 seconds to ensure the old instance is completely de-registered by WA.
+        console.log(chalk.yellow(`⏳ STABILISATION RENDER (60s Extreme Delay)...`));
+        await sleep(60000);
     }
 
     console.log(chalk.cyan("🚀 Connexion au socket WhatsApp..."));
@@ -221,7 +222,7 @@ async function startBot() {
         logger,
         browser: ['Psychobot-V2', 'Chrome', '121.0.0'],
         printQRInTerminal: false,
-        markOnlineOnConnect: true,
+        markOnlineOnConnect: false, // CRITICAL: Stop fighting for online status
         generateHighQualityLinkPreview: true,
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 60000,
@@ -229,9 +230,15 @@ async function startBot() {
         syncFullHistory: false,
         shouldIgnoreJid: (jid) => jid?.includes('@newsletter') || jid === 'status@broadcast',
         getMessage: async (key) => {
+            if (store) {
+                const msg = await store.loadMessage(key.remoteJid, key.id);
+                return msg?.message || { conversation: '' };
+            }
             return { conversation: '' };
         }
     });
+
+    if (store) store.bind(sock.ev);
 
     sock.ev.on("creds.update", saveCreds);
 
