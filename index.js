@@ -15,42 +15,67 @@ const os = require('os');
 const axios = require('axios');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const genAI = new GoogleGenerativeAI('AIzaSyCaqZKBKdBLTRgOtX7cvAycZZTQSlD639c');
+const genAI = new GoogleGenerativeAI('AIzaSyDEXEePwpBBBm6df5bobgawk0qLqGtq-h8');
+
+const RETRYABLE_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
+const MAX_RETRIES = 2;
+const BASE_WAIT_MS = 1000;
+const TIMEOUT_MS = 15000;
+
+function wait(ms) { return new Promise(res => setTimeout(res, ms)); }
+
+function parseGeminiText(result) {
+    try {
+        const resp = result?.response || result;
+        if (!resp) return null;
+        if (typeof resp.text === 'function') return resp.text().trim();
+        const cand = resp?.candidates?.[0]?.content?.parts?.[0]?.text;
+        return cand ? cand.trim() : null;
+    } catch (e) { return null; }
+}
+
+async function callModel(modelId, prompt) {
+    let attempt = 0;
+    const model = genAI.getGenerativeModel({ model: modelId });
+
+    while (attempt <= MAX_RETRIES) {
+        try {
+            const result = await Promise.race([
+                model.generateContent(prompt),
+                new Promise((_, rej) => setTimeout(() => rej(new Error('Timeout')), TIMEOUT_MS))
+            ]);
+            const text = parseGeminiText(result);
+            if (text) return text;
+        } catch (err) {
+            const status = err?.status || err?.response?.status;
+            console.error(`[Gemini ${modelId} Error]:`, err.message || err);
+            if (status && !RETRYABLE_STATUS.has(status) && attempt > 0) break;
+            attempt++;
+            await wait(BASE_WAIT_MS * Math.pow(2, attempt) + Math.floor(Math.random() * 500));
+        }
+    }
+    return null;
+}
 
 async function getAIResponse(prompt) {
-    // 1. Essayer Gemini 2.5 Flash (Meilleure qualité)
-    try {
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-        const result = await model.generateContent(prompt);
-        const text = result.response.text();
-        if (text && text.trim().length > 0) return text.trim();
-    } catch (error) {
-        console.error('[Gemini 2.5 Error]: Quota atteint ou erreur.');
-    }
+    // 1. Gemini 2.5 Flash avec Retries
+    let response = await callModel('gemini-2.5-flash', prompt);
+    if (response) return response;
 
-    // 2. Fallback vers Gemini 1.5 Flash (Plus stable)
-    try {
-        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-        const result = await model.generateContent(prompt);
-        const text = result.response.text();
-        if (text && text.trim().length > 0) return text.trim();
-    } catch (error) {
-        console.error('[Gemini 1.5 Error]: Quota atteint ou erreur.');
-    }
+    // 2. Gemini 1.5 Flash Fallback
+    console.log('[AI] Gemini 2.5 échoué, essai 1.5...');
+    response = await callModel('gemini-1.5-flash', prompt);
+    if (response) return response;
 
-    // 3. Fallback ultime vers la flotte de proxys gratuits
-    console.log('[AI] Passage au mode Redondance (Proxys)...');
+    // 3. Proxys Swarm (Dernier recours)
+    console.log('[AI] Google SATURÉ, passage à la flotte de proxys...');
     const apis = [
         { url: `https://api.bk9.site/ai/gpt4?q=${encodeURIComponent(prompt)}`, extract: (d) => d.BK9 },
         { url: `https://api.maher-zubair.tech/ai/chatgpt?q=${encodeURIComponent(prompt)}`, extract: (d) => d.result },
         { url: `https://api.vreden.my.id/api/gpt4?text=${encodeURIComponent(prompt)}`, extract: (d) => d.result || d.reply },
         { url: `https://widipe.com/gpt?prompt=${encodeURIComponent(prompt)}`, extract: (d) => d.result },
         { url: `https://api.kimis.tech/ai/gpt?q=${encodeURIComponent(prompt)}`, extract: (d) => d.result },
-        { url: `https://api.agatz.xyz/api/gpt4?message=${encodeURIComponent(prompt)}`, extract: (d) => d.data },
-        { url: `https://sh-api-one.vercel.app/api/gpt?q=${encodeURIComponent(prompt)}`, extract: (d) => d.answer },
-        { url: `https://hercai.onrender.com/v3/hercai?question=${encodeURIComponent(prompt)}`, extract: (d) => d.reply },
-        { url: `https://api.popcat.xyz/chatbot?msg=${encodeURIComponent(prompt)}`, extract: (d) => d.response },
-        { url: `https://api.simsimi.net/v2/?text=${encodeURIComponent(prompt)}&lc=fr`, extract: (d) => d.success }
+        { url: `https://hercai.onrender.com/v3/hercai?question=${encodeURIComponent(prompt)}`, extract: (d) => d.reply }
     ];
 
     for (const api of apis) {
@@ -60,8 +85,7 @@ async function getAIResponse(prompt) {
             if (result && result.trim().length > 2) return result.trim();
         } catch (e) { continue; }
     }
-
-    return "Désolé, toutes mes sources IA sont saturées. Réessayez dans un instant !";
+    return "Toutes les sources IA sont saturées. Réessayez plus tard !";
 }
 
 // --- Configuration ---

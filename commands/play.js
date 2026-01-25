@@ -6,7 +6,7 @@ const execAsync = promisify(exec);
 
 module.exports = {
     name: 'play',
-    description: "Recherche et télécharge une musique YouTube avec yt-dlp.",
+    description: "Recherche et télécharge une musique YouTube.",
     run: async ({ sock, msg, args, replyWithTag }) => {
         const query = args.join(" ");
         const from = msg.key.remoteJid;
@@ -19,45 +19,35 @@ module.exports = {
         try {
             await replyWithTag(sock, from, msg, `🔎 Recherche de "${query}"...`);
 
-            // Recherche avec yt-dlp (plus fiable que yts)
-            const searchCmd = `yt-dlp "ytsearch:${query}" --get-id --get-title --get-duration --cookies-from-browser firefox --no-warnings --quiet`;
+            // Check how to call yt-dlp
+            let ytdlpCmd = 'yt-dlp';
+            try { await execAsync('yt-dlp --version'); }
+            catch (e) { ytdlpCmd = 'python3 -m yt_dlp'; }
+
+            // Search with yt-dlp
+            const searchCmd = `${ytdlpCmd} "ytsearch:${query}" --get-id --get-title --get-duration --no-warnings --quiet`;
             const { stdout: searchOutput } = await execAsync(searchCmd);
 
             const lines = searchOutput.trim().split('\n');
-            if (lines.length < 3) {
-                return replyWithTag(sock, from, msg, "❌ Aucun résultat trouvé.");
-            }
+            if (lines.length < 3) return replyWithTag(sock, from, msg, "❌ Aucun résultat trouvé.");
 
             const videoTitle = lines[0];
             const videoDuration = lines[1];
             const videoId = lines[2];
             const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-            const infoText = `🎵 *Audio trouvé :* ${videoTitle}\n⏱️ *Durée :* ${videoDuration}`;
-            await sock.sendMessage(from, { text: infoText }, { quoted: msg });
-
+            await sock.sendMessage(from, { text: `🎵 *Musique trouvée :* ${videoTitle}\n⏱️ *Durée :* ${videoDuration}` }, { quoted: msg });
             await replyWithTag(sock, from, msg, "⏳ Téléchargement en cours...");
 
-            // Télécharge avec yt-dlp + cookies du navigateur
             const fileName = `audio_${Date.now()}`;
             const outputPath = path.join(tempDir, fileName);
 
-            const downloadCmd = `yt-dlp "${videoUrl}" \
-                --cookies-from-browser firefox \
-                --extract-audio \
-                --audio-format mp3 \
-                --audio-quality 0 \
-                --output "${outputPath}.%(ext)s" \
-                --no-warnings \
-                --quiet`;
-
-            await execAsync(downloadCmd, { timeout: 120000 }); // 2 min timeout
+            // Try download
+            const downloadCmd = `${ytdlpCmd} "${videoUrl}" --extract-audio --audio-format mp3 --output "${outputPath}.%(ext)s" --no-warnings --quiet`;
+            await execAsync(downloadCmd, { timeout: 120000 });
 
             const filePath = `${outputPath}.mp3`;
-
-            if (!fs.existsSync(filePath)) {
-                throw new Error("Le fichier téléchargé est introuvable.");
-            }
+            if (!fs.existsSync(filePath)) throw new Error("Outil introuvable.");
 
             await sock.sendMessage(from, {
                 audio: { url: filePath },
@@ -66,12 +56,10 @@ module.exports = {
                 ptt: false
             }, { quoted: msg });
 
-            // Nettoyage
             fs.unlinkSync(filePath);
-
         } catch (err) {
             console.error('[Play Error]:', err.message);
-            await replyWithTag(sock, from, msg, `❌ Le téléchargement a échoué: ${err.message}`);
+            await replyWithTag(sock, from, msg, "❌ Échec. Si le problème persiste, c'est que l'outil de téléchargement n'est pas installé sur le serveur.");
         }
     }
 };
