@@ -228,13 +228,13 @@ async function startBot() {
             keys: makeCacheableSignalKeyStore(state.keys, silentLogger),
         },
         logger: silentLogger,
-        browser: ['Erwin-Bot', 'Chrome', '121.0.0'],
-        printQRInTerminal: false, // Handled manually below
+        browser: ['Ubuntu', 'Firefox', '121.0'],
+        printQRInTerminal: false, 
         markOnlineOnConnect: true,
         syncFullHistory: false,
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 60000,
-        keepAliveIntervalMs: 25000,
+        keepAliveIntervalMs: 25000, 
         getMessage: async (key) => {
             return { conversation: '' };
         },
@@ -289,21 +289,8 @@ async function startBot() {
         if (qr) {
             // Safety: Only show QR if we are definitely NOT connected
             if (connection === 'open') return;
-
+            
             latestQR = qr;
-            console.log(chalk.cyan('\n' + '═'.repeat(60)));
-            console.log(chalk.green.bold(`\n📱 WHATSAPP QR CODE`));
-            console.log(chalk.cyan('═'.repeat(60) + '\n'));
-
-            qrcodeTerminal.generate(qr, { small: false });
-
-            console.log(chalk.cyan('\n' + '═'.repeat(60)));
-            console.log(chalk.yellow.bold('\n📝 INSTRUCTIONS:'));
-            console.log(chalk.gray('   1️⃣  Ouvre WhatsApp sur ton téléphone'));
-            console.log(chalk.gray('   2️⃣  Va dans: Paramètres (⋮) > Appareils liés'));
-            console.log(chalk.gray('   3️⃣  Appuie sur "Lier un appareil"'));
-            console.log(chalk.cyan('═'.repeat(60) + '\n'));
-
             try {
                 const url = await QRCode.toDataURL(qr);
                 broadcast({ type: 'qr', qr: url });
