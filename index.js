@@ -219,19 +219,21 @@ async function startBot() {
             keys: makeCacheableSignalKeyStore(state.keys, logger),
         },
         logger,
-        browser: ["Ubuntu", "Chrome", "20.0.04"],
-        printQRInTerminal: false, // Avoid deprecation warning
+        browser: ['Psychobot-V2', 'Chrome', '121.0.0'],
+        printQRInTerminal: false,
         markOnlineOnConnect: true,
         generateHighQualityLinkPreview: true,
         connectTimeoutMs: 60000,
-        defaultQueryTimeoutMs: 0,
+        defaultQueryTimeoutMs: 60000,
+        keepAliveIntervalMs: 25000,
         syncFullHistory: false,
         shouldIgnoreJid: (jid) => jid?.includes('@newsletter') || jid === 'status@broadcast',
         getMessage: async (key) => {
             if (store) {
                 const msg = await store.loadMessage(key.remoteJid, key.id);
-                return msg?.message || undefined;
+                return msg?.message || { conversation: '' };
             }
+            return { conversation: '' };
         }
     });
 
