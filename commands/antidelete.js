@@ -14,7 +14,7 @@ module.exports = {
             await replyWithTag(sock, from, msg, "🚫 *Anti-Delete Désactivé* pour ce groupe.");
         } else {
             antideleteGroups.add(from);
-            await replyWithTag(sock, from, msg, "✅ *Anti-Delete Activé* pour ce groupe.\n_(Les messages supprimés seront envoyés à mon maître)_");
+            await replyWithTag(sock, from, msg, "✅ *Anti-Delete Activé* pour ce groupe. \n_(Chaque message supprimé sera désormais renvoyé ici)_");
         }
     }
 };

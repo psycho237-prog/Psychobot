@@ -1,6 +1,6 @@
 // Psychobot - Core V2 (Clean Slate Refactor + WS Support)
 const express = require('express');
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers, makeCacheableSignalKeyStore, delay } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers, makeCacheableSignalKeyStore, delay, makeInMemoryStore } = require('@whiskeysockets/baileys');
 const QRCode = require("qrcode");
 const pino = require("pino");
 const fs = require("fs");
@@ -68,9 +68,14 @@ let sock = null;
 
 const processedMessages = new Set();
 const messageCache = new Map();
-const antideletePool = new Map(); // Global message pool for antidelete
 const antilinkGroups = new Set(); // Groups with antilink ON
 const antideleteGroups = new Set(); // Groups with antidelete ON
+
+// --- Store (Bot Memory) ---
+const store = makeInMemoryStore({ logger: pino().child({ level: 'silent', stream: 'store' }) });
+store.readFromFile('./baileys_store.json');
+setInterval(() => { store.writeToFile('./baileys_store.json') }, 10000);
+
 
 // --- Helpers ---
 const sleep = (ms) => new Promise(res => setTimeout(res, ms));
@@ -220,8 +225,16 @@ async function startBot() {
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 0,
         syncFullHistory: false,
-        shouldIgnoreJid: (jid) => jid?.includes('@newsletter') || jid === 'status@broadcast'
+        shouldIgnoreJid: (jid) => jid?.includes('@newsletter') || jid === 'status@broadcast',
+        getMessage: async (key) => {
+            if (store) {
+                const msg = await store.loadMessage(key.remoteJid, key.id);
+                return msg?.message || undefined;
+            }
+        }
     });
+
+    store.bind(sock.ev);
 
     sock.ev.on("creds.update", saveCreds);
 
@@ -331,7 +344,47 @@ async function startBot() {
         }
 
         if (!msg.message) return;
-        // if (msg.key.fromMe) return; // Allow bot owner to use commands
+
+        const mType = Object.keys(msg.message)[0];
+        // --- ANTI-DELETE HANDLER ---
+        if (mType === 'protocolMessage' && msg.message.protocolMessage?.type === 0) {
+            const deletedKey = msg.message.protocolMessage.key;
+            const from = msg.key.remoteJid;
+
+            // Don't snitch on yourself or the owner
+            if (deletedKey.fromMe) return;
+
+            if (antideleteGroups.has(from)) {
+                try {
+                    const original = await store.loadMessage(from, deletedKey.id);
+                    if (!original) return;
+
+                    const sender = original.key.participant || original.key.remoteJid;
+                    const body = original.message.conversation ||
+                        original.message.extendedTextMessage?.text ||
+                        "Media Content (Photo/Video/Voice)";
+
+                    const headerText = `❗ *PSYCHO-BOT: MESSAGE RÉCUPÉRÉ* ❗\n━━━━━━━━━━━━━━──\n👤 *Auteur:* @${sender.split('@')[0]}`;
+
+                    await sock.sendMessage(from, {
+                        text: `${headerText}\n💬 *Message:* ${body}`,
+                        mentions: [sender]
+                    }, { quoted: original });
+
+                    // Resend media if applicable
+                    if (original.message.imageMessage || original.message.videoMessage || original.message.audioMessage) {
+                        try {
+                            await sock.sendMessage(from, { forward: original });
+                        } catch (mediaErr) {
+                            console.error('[AntiDelete] Failed to forward media:', mediaErr.message);
+                        }
+                    }
+                } catch (err) {
+                    console.error('[AntiDelete] Error:', err.message);
+                }
+            }
+            return; // Important: Stop processing further
+        }
 
         const msgId = msg.key.id;
         if (processedMessages.has(msgId)) return;
@@ -492,80 +545,58 @@ async function startBot() {
         }
     });
 
-    // --- ANTIDELETE LISTENER ---
-    sock.ev.on("messages.update", async (updates) => {
-        for (const update of updates) {
-            if (update.update.protocolMessage?.type === 0 || update.update.protocolMessage?.type === 5) {
-                const jid = update.key.remoteJid;
-                if (!antideleteGroups.has(jid)) continue;
+});
 
-                const archived = antideletePool.get(update.key.id);
-                if (!archived) continue;
+const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 
-                console.log(`[Antidelete] Detected delete in ${jid}. Recovering ID ${update.key.id}`);
+// Reaction Handler for ViewOnce Extraction (Incognito)
+sock.ev.on("messages.reaction", async (reactions) => {
+    const cleanJid = (jid) => jid ? jid.split(':')[0].split('@')[0] : "";
 
-                const sender = archived.key.participant || archived.key.remoteJid;
-                const senderText = `🗑️ *Message Supprimé détecté*\n👤 *Auteur:* @${sender.split('@')[0]}\n💬 *Groupe:* ${jid.split('@')[0]}`;
+    for (const reaction of reactions) {
+        const { key } = reaction;
 
-                const masterJid = sock.user.id.split(':')[0] + "@s.whatsapp.net";
+        // SECURITY: Only extraction if the reactor is the Owner
+        const reactor = reaction.key.fromMe ? sock.user.id : (reaction.key.participant || reaction.key.remoteJid);
+        const reactorClean = cleanJid(reactor);
+        const isOwner = reaction.key.fromMe || reactorClean === OWNER_PN || OWNER_LIDS.includes(reactorClean);
 
-                // Forward to YOU (Master)
-                await sock.sendMessage(masterJid, { text: senderText, mentions: [sender] });
-                await sock.sendMessage(masterJid, { forward: archived });
-            }
-        }
-    });
+        if (!isOwner) continue;
 
-    const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
+        const archivedMsg = messageCache.get(key.id);
+        if (archivedMsg) {
+            let content = archivedMsg.message;
+            if (content.ephemeralMessage) content = content.ephemeralMessage.message;
+            const viewOnce = content?.viewOnceMessage || content?.viewOnceMessageV2 || content?.viewOnceMessageV2Extension;
 
-    // Reaction Handler for ViewOnce Extraction (Incognito)
-    sock.ev.on("messages.reaction", async (reactions) => {
-        const cleanJid = (jid) => jid ? jid.split(':')[0].split('@')[0] : "";
+            if (viewOnce) {
+                console.log(`[ViewOnce] Owner extraction trigger (Reaction) for ${key.id}`);
+                try {
+                    const viewOnceContent = viewOnce.message;
+                    const mediaType = Object.keys(viewOnceContent).find(k => k.includes('Message'));
+                    if (!mediaType) return;
 
-        for (const reaction of reactions) {
-            const { key } = reaction;
+                    const mediaData = viewOnceContent[mediaType];
+                    const stream = await downloadContentFromMessage(mediaData, mediaType.replace('Message', ''));
+                    let buffer = Buffer.from([]);
+                    for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
 
-            // SECURITY: Only extraction if the reactor is the Owner
-            const reactor = reaction.key.fromMe ? sock.user.id : (reaction.key.participant || reaction.key.remoteJid);
-            const reactorClean = cleanJid(reactor);
-            const isOwner = reaction.key.fromMe || reactorClean === OWNER_PN || OWNER_LIDS.includes(reactorClean);
+                    const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+                    const caption = `🔓 *ViewOnce Extracted* (From: ${archivedMsg.pushName || 'Inconnu'})`;
+                    const type = mediaType.replace('Message', '');
+                    const options = { jpegThumbnail: null };
 
-            if (!isOwner) continue;
+                    if (type === 'image') await sock.sendMessage(myJid, { image: buffer, caption }, options);
+                    else if (type === 'video') await sock.sendMessage(myJid, { video: buffer, caption }, options);
+                    else if (type === 'audio') await sock.sendMessage(myJid, { audio: buffer, mimetype: 'audio/mp4', ptt: true });
 
-            const archivedMsg = messageCache.get(key.id);
-            if (archivedMsg) {
-                let content = archivedMsg.message;
-                if (content.ephemeralMessage) content = content.ephemeralMessage.message;
-                const viewOnce = content?.viewOnceMessage || content?.viewOnceMessageV2 || content?.viewOnceMessageV2Extension;
-
-                if (viewOnce) {
-                    console.log(`[ViewOnce] Owner extraction trigger (Reaction) for ${key.id}`);
-                    try {
-                        const viewOnceContent = viewOnce.message;
-                        const mediaType = Object.keys(viewOnceContent).find(k => k.includes('Message'));
-                        if (!mediaType) return;
-
-                        const mediaData = viewOnceContent[mediaType];
-                        const stream = await downloadContentFromMessage(mediaData, mediaType.replace('Message', ''));
-                        let buffer = Buffer.from([]);
-                        for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
-
-                        const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-                        const caption = `🔓 *ViewOnce Extracted* (From: ${archivedMsg.pushName || 'Inconnu'})`;
-                        const type = mediaType.replace('Message', '');
-                        const options = { jpegThumbnail: null };
-
-                        if (type === 'image') await sock.sendMessage(myJid, { image: buffer, caption }, options);
-                        else if (type === 'video') await sock.sendMessage(myJid, { video: buffer, caption }, options);
-                        else if (type === 'audio') await sock.sendMessage(myJid, { audio: buffer, mimetype: 'audio/mp4', ptt: true });
-
-                    } catch (err) {
-                        console.error("[Incognito Reaction] Error:", err.message);
-                    }
+                } catch (err) {
+                    console.error("[Incognito Reaction] Error:", err.message);
                 }
             }
         }
-    });
+    }
+});
 }
 
 // --- Anti-Idle (Keep Alive) ---
