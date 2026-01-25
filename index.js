@@ -14,6 +14,7 @@ const bodyParser = require("body-parser");
 const os = require('os');
 const axios = require('axios');
 const cron = require('node-cron');
+const qrcodeTerminal = require('qrcode-terminal');
 const googleTTS = require('google-tts-api');
 require('dotenv').config();
 const Groq = require("groq-sdk");
@@ -227,28 +228,18 @@ async function startBot() {
             keys: makeCacheableSignalKeyStore(state.keys, silentLogger),
         },
         logger: silentLogger,
-        browser: Browsers.macOS('Chrome'),
-        printQRInTerminal: true,
+        browser: ['Erwin-Bot', 'Chrome', '121.0.0'],
+        printQRInTerminal: false, // Handled manually below
         markOnlineOnConnect: true,
-        generateHighQualityLinkPreview: false,
-        connectTimeoutMs: 60000,
-        keepAliveIntervalMs: 25000,
         syncFullHistory: false,
-        shouldSyncHistoryMessage: () => false,
-        preloadGroupParticipants: false,
-
-
-        // 🔄 MESSAGE RECOVERY (Consolidated)
+        connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 60000,
+        keepAliveIntervalMs: 25000,
         getMessage: async (key) => {
-            if (store) {
-                const msg = await store.loadMessage(key.remoteJid, key.id);
-                return msg?.message || { conversation: "Syncing..." };
-            }
-            return { conversation: "Syncing..." };
+            return { conversation: '' };
         },
+        shouldIgnoreJid: (jid) => jid === 'status@broadcast',
 
-        shouldIgnoreJid: (jid) => jid?.includes('@newsletter') || jid === 'status@broadcast',
-        defaultQueryTimeoutMs: 120000,
 
         patchMessageBeforeSending: (message) => {
             const requiresPatch = !!(
@@ -297,39 +288,46 @@ async function startBot() {
 
         if (qr) {
             // Safety: Only show QR if we are definitely NOT connected
-            if (connection === 'open') {
-                console.log(chalk.gray(`[QR] Blocked: Connection is already open.`));
-                return;
-            }
+            if (connection === 'open') return;
+
             latestQR = qr;
-            // console.log(chalk.yellow(`[QR] New code generated.`));
+            console.log(chalk.cyan('\n' + '═'.repeat(60)));
+            console.log(chalk.green.bold(`\n📱 WHATSAPP QR CODE`));
+            console.log(chalk.cyan('═'.repeat(60) + '\n'));
+
+            qrcodeTerminal.generate(qr, { small: false });
+
+            console.log(chalk.cyan('\n' + '═'.repeat(60)));
+            console.log(chalk.yellow.bold('\n📝 INSTRUCTIONS:'));
+            console.log(chalk.gray('   1️⃣  Ouvre WhatsApp sur ton téléphone'));
+            console.log(chalk.gray('   2️⃣  Va dans: Paramètres (⋮) > Appareils liés'));
+            console.log(chalk.gray('   3️⃣  Appuie sur "Lier un appareil"'));
+            console.log(chalk.cyan('═'.repeat(60) + '\n'));
+
             try {
                 const url = await QRCode.toDataURL(qr);
                 broadcast({ type: 'qr', qr: url });
-                broadcast({ type: 'status', message: 'Please scan the new QR Code' });
-            } catch (e) {
-                console.error('QR Encode Error', e);
-            }
+                broadcast({ type: 'status', message: 'Please scan the QR Code' });
+            } catch (e) { }
         }
 
         if (connection === "close") {
-            const reason = lastDisconnect?.error?.output?.statusCode;
-            const errorMsg = lastDisconnect?.error?.message || "";
+            const statusCode = lastDisconnect?.error?.output?.statusCode;
+            console.log(chalk.red(`❌ Connexion fermée (${statusCode || 'Unknown'})`));
 
-            console.log(chalk.red(`❌ Connection Closed. Code: ${reason} | Error: ${errorMsg}`));
-
-            broadcast({ type: 'status', message: `Disconnected: ${reason || 'Error'}` });
+            broadcast({ type: 'status', message: `Disconnected: ${statusCode || 'Error'}` });
             isStarting = false;
 
-            if (reason !== DisconnectReason.loggedOut && reason !== 401) {
-                reconnectAttempts++;
-                console.log(chalk.yellow(`🔄 Reconnecting (Attempt ${reconnectAttempts}/5)...`));
-                setTimeout(() => startBot(), 5000);
-            } else {
-                console.log(chalk.red("🛑 Session logged out or unauthorized. Please scan again."));
-                // fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
+            if (statusCode === 401) {
+                console.log(chalk.red("🛑 Session invalide. Purge et redémarrage..."));
+                fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
+                reconnectAttempts = 0;
                 process.exit(1);
             }
+
+            reconnectAttempts++;
+            console.log(chalk.yellow(`🔄 Reconnecting (Attempt ${reconnectAttempts}/5)...`));
+            setTimeout(() => startBot(), 5000);
         } else if (connection === "open") {
             latestQR = null;
             reconnectAttempts = 0;
