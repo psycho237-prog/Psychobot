@@ -15,9 +15,16 @@ const os = require('os');
 const axios = require('axios');
 require('dotenv').config();
 const Groq = require("groq-sdk");
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+let groq;
+try {
+    groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+} catch (e) {
+    console.warn("⚠️ GROQ_API_KEY manquante. IA désactivée temporairement.");
+}
 
 async function getAIResponse(prompt) {
+    if (!groq) return "❌ Erreur config: Clé API manquante sur le serveur.";
+
     if (!prompt || typeof prompt !== 'string') {
         return "Please provide a valid prompt.";
     }
@@ -47,8 +54,9 @@ async function getAIResponse(prompt) {
 const PORT = process.env.PORT || 10000;
 const AUTH_FOLDER = path.join(__dirname, "session");
 const PREFIX = "!";
-const BOT_NAME = process.env.BOT_NAME || "PSYCHO BOT";
-const OWNER_PN = process.env.OWNER || "";
+const BOT_NAME = "PSYCHO BOT";
+const OWNER_PN = "237696814391";
+const OWNER_LIDS = ["250865332039895", "85483438760009", "128098053963914", "243941626613920"];
 const cleanJid = (jid) => jid ? jid.split(':')[0].split('@')[0] : "";
 const startTime = new Date();
 
