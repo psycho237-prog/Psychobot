@@ -77,7 +77,6 @@ async function notifyOwner(text) {
 
 let reconnectAttempts = 0;
 let isStarting = false;
-let isSyncing = false; // Backlog Shield Flag
 let latestQR = null;
 let lastConnectedAt = 0;
 let sock = null;
@@ -239,17 +238,15 @@ async function startBot() {
             keys: makeCacheableSignalKeyStore(state.keys, silentLogger),
         },
         logger: silentLogger,
-        browser: Browsers.macOS('Desktop'),
-
-
+        browser: Browsers.macOS('Chrome'), 
         printQRInTerminal: true,
         markOnlineOnConnect: true, 
-        generateHighQualityLinkPreview: true, 
-        connectTimeoutMs: 120000,
-        keepAliveIntervalMs: 20000,
-        syncFullHistory: false,
-        shouldSyncHistoryMessage: () => false,
-        preloadGroupParticipants: true, 
+        generateHighQualityLinkPreview: false,
+        connectTimeoutMs: 60000,
+        keepAliveIntervalMs: 25000, 
+        syncFullHistory: false,            
+        shouldSyncHistoryMessage: () => false, 
+        preloadGroupParticipants: false, 
 
 
         // 🔄 MESSAGE RECOVERY (Consolidated)
@@ -378,14 +375,7 @@ async function startBot() {
             criticalErrorCount = 0; // Reset error counter on success
             isStarting = false;
             lastConnectedAt = Date.now();
-            isSyncing = true; // Activate Shield
-            console.log(chalk.green.bold("\n✅ PSYCHOBOT ONLINE !"));
-            console.log(chalk.cyan("🛡️ Backlog Shield Active: Ignoring old messages for 1 minute..."));
-
-            setTimeout(() => {
-                isSyncing = false;
-                console.log(chalk.green("�️ Backlog Shield Deactivated: Ready for new messages."));
-            }, 60000);
+            console.log(chalk.green.bold("\n✅ PSYCHOBOT ONLINE AND CONNECTED !"));
 
             const user = sock.user.id.split(':')[0];
             broadcast({ type: 'connected', user });
@@ -394,8 +384,8 @@ async function startBot() {
 
     sock.ev.on("messages.upsert", async ({ messages, type }) => {
         if (type !== "notify") return;
-        if (isSyncing) return; // 🛡️ SHIELD: REJECT ALL DURING SYNC
         const msg = messages[0];
+
 
 
         // 2. Ignore messages sent before the bot was turned on
