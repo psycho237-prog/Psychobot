@@ -11,7 +11,14 @@ const safetySettings = [
 ];
 
 async function getAIResponse(prompt) {
-    // 1. Gemini 2.5 Flash
+    // 1. Meta Llama 3 (Top!)
+    try {
+        const llamaApi = `https://api.bk9.site/ai/llama3?q=${encodeURIComponent(prompt)}`;
+        const res = await axios.get(llamaApi, { timeout: 15000 });
+        if (res.data && res.data.BK9) return res.data.BK9.trim();
+    } catch (e) { console.error('[Llama 3 Error]: Failed'); }
+
+    // 2. Gemini 2.5 Flash
     try {
         const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', safetySettings });
         const result = await model.generateContent(prompt);
@@ -19,22 +26,13 @@ async function getAIResponse(prompt) {
         if (text && text.trim().length > 0) return text.trim();
     } catch (error) { console.error('[Gemini 2.5 Error]:', error.message || error); }
 
-    // 2. Gemini 1.5 Flash
+    // 3. Gemini 1.5 Flash
     try {
-        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash', safetySettings });
+        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest', safetySettings });
         const result = await model.generateContent(prompt);
         const text = result.response.text();
         if (text && text.trim().length > 0) return text.trim();
     } catch (error) { console.error('[Gemini 1.5 Error]:', error.message || error); }
-
-    // 3. Llama 3 (Fallback)
-    try {
-        const llamaApi = `https://api.bk9.site/ai/llama3?q=${encodeURIComponent(prompt)}`;
-        const res = await axios.get(llamaApi, { timeout: 10000 });
-        if (res.data && res.data.BK9) return res.data.BK9.trim();
-    } catch (e) {
-        console.error('[Llama 3 Error]: Failed');
-    }
 
     // 4. Flotte de proxys Swarm
     const apis = [

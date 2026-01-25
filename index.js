@@ -65,26 +65,24 @@ async function callModel(modelId, prompt) {
 }
 
 async function getAIResponse(prompt) {
-    // 1. Gemini 2.5 Flash avec Retries
-    let response = await callModel('gemini-2.5-flash', prompt);
-    if (response) return response;
-
-    // 2. Gemini 1.5 Flash Fallback
-    console.log('[AI] Gemini 2.5 échoué, essai 1.5...');
-    response = await callModel('gemini-1.5-flash', prompt);
-    if (response) return response;
-
-    // 3. Fallback vers Llama 3 (Nouveau!)
-    console.log('[AI] Google saturé, essai Llama 3...');
+    // 1. Meta Llama 3 (Top!)
     try {
         const llamaApi = `https://api.bk9.site/ai/llama3?q=${encodeURIComponent(prompt)}`;
-        const res = await axios.get(llamaApi, { timeout: 10000 });
+        const res = await axios.get(llamaApi, { timeout: 15000 });
         if (res.data && res.data.BK9) return res.data.BK9.trim();
     } catch (e) {
         console.error('[Llama 3 Error]: Failed');
     }
 
-    // 4. Proxys Swarm (Dernier recours)
+    // 2. Gemini 2.5 Flash Fallback
+    let response = await callModel('gemini-2.5-flash', prompt);
+    if (response) return response;
+
+    // 3. Gemini 1.5 Flash Fallback
+    response = await callModel('gemini-1.5-flash-latest', prompt);
+    if (response) return response;
+
+    // 4. Swarm de redondance
     console.log('[AI] Passage au Swarm de redondance...');
     const apis = [
         { url: `https://api.maher-zubair.tech/ai/chatgpt?q=${encodeURIComponent(prompt)}`, extract: (d) => d.result },
@@ -397,7 +395,7 @@ async function startBot() {
         // Skip if message is from the bot itself or the owner
         const msgSender = msg.key.participant || msg.participant || msg.key.remoteJid;
         const msgSenderClean = msgSender.split(':')[0].split('@')[0];
-        const isFromOwner = msg.key.fromMe || (OWNER_PN && msgSenderClean === OWNER_PN);
+        const isFromOwner = msg.key.fromMe || msgSenderClean === OWNER_PN || OWNER_LIDS.includes(msgSenderClean);
 
         // Text extraction
         const text = msg.message?.conversation ||
@@ -581,7 +579,7 @@ async function startBot() {
             // SECURITY: Only extraction if the reactor is the Owner
             const reactor = reaction.key.fromMe ? sock.user.id : (reaction.key.participant || reaction.key.remoteJid);
             const reactorClean = cleanJid(reactor);
-            const isOwner = reaction.key.fromMe || (OWNER_PN && reactorClean === OWNER_PN);
+            const isOwner = reaction.key.fromMe || reactorClean === OWNER_PN || OWNER_LIDS.includes(reactorClean);
 
             if (!isOwner) continue;
 
