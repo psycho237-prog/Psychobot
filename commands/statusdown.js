@@ -38,12 +38,33 @@ module.exports = {
             for await (const chunk of stream) chunks.push(chunk);
 
             const ext = mediaType === "video" ? "mp4" : "jpg";
-            const fileName = path.join(__dirname, `../downloads/status_${Date.now()}.${ext}`);
-            fs.writeFileSync(fileName, Buffer.concat(chunks));
+            const downloadDir = path.join(__dirname, '../downloads');
+            if (!fs.existsSync(downloadDir)) fs.mkdirSync(downloadDir, { recursive: true });
 
-            await replyWithTag(sock, remoteJid, msg, `✅ Statut téléchargé : ${fileName}`);
+            const fileName = `status_${Date.now()}.${ext}`;
+            const filePath = path.join(downloadDir, fileName);
+            fs.writeFileSync(filePath, Buffer.concat(chunks));
+
+            // Envoi du fichier
+            const messageOptions = {};
+            if (mediaType === "image") {
+                messageOptions.image = { url: filePath };
+            } else {
+                messageOptions.video = { url: filePath };
+            }
+            messageOptions.caption = "✅ *Statut téléchargé avec succès !*";
+
+            await sock.sendMessage(remoteJid, messageOptions, { quoted: msg });
+
+            // Nettoyage après 5 secondes
+            setTimeout(() => {
+                try {
+                    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+                } catch (e) { }
+            }, 5000);
+
         } catch (err) {
-            console.error(err);
+            console.error('[StatusDown Error]:', err);
             await replyWithTag(sock, msg.key.remoteJid, msg, "❌ Impossible de télécharger le statut.");
         }
     }

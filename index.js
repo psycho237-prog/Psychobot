@@ -13,9 +13,16 @@ const http = require('http');
 const bodyParser = require("body-parser");
 const os = require('os');
 const axios = require('axios');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require('@google/generative-ai');
 
-const genAI = new GoogleGenerativeAI('AIzaSyDEXEePwpBBBm6df5bobgawk0qLqGtq-h8');
+const genAI = new GoogleGenerativeAI('YOUR_API_KEY');
+
+const safetySettings = [
+    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+];
 
 const RETRYABLE_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
 const MAX_RETRIES = 2;
@@ -36,7 +43,7 @@ function parseGeminiText(result) {
 
 async function callModel(modelId, prompt) {
     let attempt = 0;
-    const model = genAI.getGenerativeModel({ model: modelId });
+    const model = genAI.getGenerativeModel({ model: modelId, safetySettings });
 
     while (attempt <= MAX_RETRIES) {
         try {
@@ -67,10 +74,19 @@ async function getAIResponse(prompt) {
     response = await callModel('gemini-1.5-flash', prompt);
     if (response) return response;
 
-    // 3. Proxys Swarm (Dernier recours)
-    console.log('[AI] Google SATURÉ, passage à la flotte de proxys...');
+    // 3. Fallback vers Llama 3 (Nouveau!)
+    console.log('[AI] Google saturé, essai Llama 3...');
+    try {
+        const llamaApi = `https://api.bk9.site/ai/llama3?q=${encodeURIComponent(prompt)}`;
+        const res = await axios.get(llamaApi, { timeout: 10000 });
+        if (res.data && res.data.BK9) return res.data.BK9.trim();
+    } catch (e) {
+        console.error('[Llama 3 Error]: Failed');
+    }
+
+    // 4. Proxys Swarm (Dernier recours)
+    console.log('[AI] Passage au Swarm de redondance...');
     const apis = [
-        { url: `https://api.bk9.site/ai/gpt4?q=${encodeURIComponent(prompt)}`, extract: (d) => d.BK9 },
         { url: `https://api.maher-zubair.tech/ai/chatgpt?q=${encodeURIComponent(prompt)}`, extract: (d) => d.result },
         { url: `https://api.vreden.my.id/api/gpt4?text=${encodeURIComponent(prompt)}`, extract: (d) => d.result || d.reply },
         { url: `https://widipe.com/gpt?prompt=${encodeURIComponent(prompt)}`, extract: (d) => d.result },
@@ -85,7 +101,7 @@ async function getAIResponse(prompt) {
             if (result && result.trim().length > 2) return result.trim();
         } catch (e) { continue; }
     }
-    return "Toutes les sources IA sont saturées. Réessayez plus tard !";
+    return "Toutes les sources IA (Gemini, Llama, GPT) sont saturées. Réessayez plus tard !";
 }
 
 // --- Configuration ---
