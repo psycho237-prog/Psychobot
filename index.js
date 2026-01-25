@@ -163,12 +163,12 @@ async function startBot() {
     header();
     broadcast({ type: 'status', message: 'Starting Bot...' });
 
-    // RENDER SETTLING DELAY (Optimized for Conflict Prevention)
+    // RENDER SETTLING DELAY (Maximum Hardening)
     const isRender = process.env.RENDER || process.env.RENDER_URL;
     if (reconnectAttempts === 0 && isRender) {
-        const jitter = Math.floor(Math.random() * 10000) + 15000; // 15-25s delay
-        console.log(chalk.yellow(`⏳ STABILISATION RENDER (${jitter}ms)...`));
-        await sleep(jitter);
+        // Render wait time is usually 30s. We wait 30s to be absolutely sure.
+        console.log(chalk.yellow(`⏳ STABILISATION RENDER (30s Fixed Delay)...`));
+        await sleep(30000);
     }
 
     console.log(chalk.cyan("🚀 Connexion au socket WhatsApp..."));
@@ -682,6 +682,17 @@ server.listen(PORT, () => {
     console.log(chalk.blue(`[Server] Port ${PORT} lié.`));
     startBot();
 });
+
+// --- Graceful Shutdown for Render ---
+process.on('SIGTERM', async () => {
+    console.log(chalk.red("\n🛑 SIGTERM RECEIVED. Shutting down bot..."));
+    if (sock) {
+        sock.end();
+        console.log(chalk.gray("Socket closed."));
+    }
+    process.exit(0);
+});
+
 
 process.on('uncaughtException', (error) => {
     const msg = error?.message || String(error);
