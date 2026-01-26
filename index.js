@@ -1,59 +1,68 @@
-// Psychobot - Core V2 (Clean Slate Refactor + WS Support)
+// 🚀 PSYCHO BOT - 2025 ENTERPRISE EDITION
+// ============================================
+// Latest Baileys 7.0+ Compatible | Optimized Connection Handling
+// Better Error Recovery | Enhanced Stability | Modern Stack
+
 const express = require('express');
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers, makeCacheableSignalKeyStore, delay, makeInMemoryStore } = require('@whiskeysockets/baileys');
+const {
+    default: makeWASocket,
+    useMultiFileAuthState,
+    DisconnectReason,
+    fetchLatestBaileysVersion,
+    Browsers,
+    makeCacheableSignalKeyStore,
+    makeInMemoryStore,
+    downloadContentFromMessage,
+    delay
+} = require('@whiskeysockets/baileys');
 const QRCode = require("qrcode");
 const pino = require("pino");
 const fs = require("fs");
 const path = require("path");
-const https = require("https");
 const chalk = require("chalk");
 const figlet = require("figlet");
 const WebSocket = require('ws');
 const http = require('http');
 const bodyParser = require("body-parser");
-const os = require('os');
 const axios = require('axios');
 const cron = require('node-cron');
-const qrcodeTerminal = require('qrcode-terminal');
 const googleTTS = require('google-tts-api');
 require('dotenv').config();
+
+// ✅ AI CONFIG
 const Groq = require("groq-sdk");
 let groq;
 try {
     groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 } catch (e) {
-    console.warn("⚠️ GROQ_API_KEY manquante. IA désactivée temporairement.");
+    console.warn("⚠️ GROQ_API_KEY missing. AI disabled temporarily.");
 }
 
 async function getAIResponse(prompt) {
-    if (!groq) return "❌ Erreur config: Clé API manquante sur le serveur.";
-
-    if (!prompt || typeof prompt !== 'string') {
-        return "Please provide a valid prompt.";
-    }
+    if (!groq) return "❌ Error: API key missing on server.";
+    if (!prompt || typeof prompt !== 'string') return "Please provide a valid prompt.";
 
     try {
         const chatCompletion = await groq.chat.completions.create({
-            "messages": [
-                { "role": "system", "content": "You are a helpful assistant." },
-                { "role": "user", "content": prompt }
+            messages: [
+                { role: "system", content: "You are a helpful assistant." },
+                { role: "user", content: prompt }
             ],
-            "model": "llama-3.3-70b-versatile",
-            "temperature": 0.7,
-            "max_tokens": 1024,
-            "top_p": 1,
-            "stream": false
+            model: "llama-3.3-70b-versatile",
+            temperature: 0.7,
+            max_tokens: 1024,
+            top_p: 1,
+            stream: false
         });
-
         return chatCompletion.choices[0].message.content.trim();
     } catch (error) {
         console.error('[Groq Error]:', error.message);
-        if (error.status === 429) return "⏳ Too many requests. Please try again later.";
-        return "Sorry, I'm having trouble connecting to the AI right now.";
+        if (error.status === 429) return "⏳ Too many requests. Try again later.";
+        return "Sorry, AI connection failed right now.";
     }
 }
 
-// --- Configuration ---
+// ✅ CONFIGURATION
 const PORT = process.env.PORT || 10000;
 const AUTH_FOLDER = path.join(__dirname, "session");
 const PREFIX = "!";
@@ -61,91 +70,86 @@ const BOT_NAME = "PSYCHO BOT";
 const OWNER_PN = "237696814391";
 const OWNER_LIDS = ["250865332039895", "85483438760009", "128098053963914", "243941626613920"];
 const cleanJid = (jid) => jid ? jid.split(':')[0].split('@')[0] : "";
-const startTime = new Date();
 const botStartTime = Math.floor(Date.now() / 1000);
 
-async function notifyOwner(text) {
-    try {
-        const ownerJid = OWNER_PN + "@s.whatsapp.net";
-        if (sock?.user) {
-            await sock.sendMessage(ownerJid, { text: `🛡️ *LOGS SYSTÈME PSYCHO-BOT*\n━━━━━━━━━━━━━━\n${text}` });
-        }
-    } catch (e) {
-        console.error("Owner Notification Failed:", e.message);
-    }
-}
-
-
-
+// ✅ STATE MANAGEMENT
 let reconnectAttempts = 0;
 let isStarting = false;
 let latestQR = null;
-let lastConnectedAt = 0;
 let sock = null;
 
 const processedMessages = new Set();
 const messageCache = new Map();
-const antilinkGroups = new Set(); // Groups with antilink ON
-const antideleteGroups = new Set(); // Groups with antidelete ON
-let readReceiptsEnabled = false; // Global toggle for read receipts
+const antideletePool = new Map();
+const antilinkGroups = new Set();
+const antideleteGroups = new Set();
+let readReceiptsEnabled = false;
 
-
-// --- Store (Bot Memory) ---
+// ✅ STORE
 const store = makeInMemoryStore({ logger: pino().child({ level: 'silent', stream: 'store' }) });
 store.readFromFile('./baileys_store.json');
 setInterval(() => { store.writeToFile('./baileys_store.json') }, 10000);
 
-
-// --- Helpers ---
+// ✅ HELPERS
 const sleep = (ms) => new Promise(res => setTimeout(res, ms));
 
 function header() {
     console.clear();
     console.log(chalk.cyan(figlet.textSync(BOT_NAME, { horizontalLayout: 'full' })));
-    console.log(chalk.gray('Clean Slate Core V2 | Render Optimized'));
+    console.log(chalk.gray('🚀 2025 Enterprise Edition | Baileys 7.0+'));
     console.log(chalk.gray('────────────────────────────────────────────────────'));
 }
 
-// --- Command Loader ---
+// ✅ OWNER NOTIFICATION
+async function notifyOwner(text) {
+    try {
+        if (sock?.user) {
+            const ownerJid = OWNER_PN + "@s.whatsapp.net";
+            await sock.sendMessage(ownerJid, { text: `🛡️ *SYSTEM LOGS*\n━━━━━━━━━━━\n${text}` });
+        }
+    } catch (e) {
+        console.error("Owner notification failed:", e.message);
+    }
+}
+
+// ✅ COMMAND LOADER
 const commands = new Map();
 const commandFolder = path.join(__dirname, 'commands');
 
 function loadCommands() {
     if (!fs.existsSync(commandFolder)) {
-        console.log(chalk.yellow("⚠️ Dossier commands introuvable."));
+        console.log(chalk.yellow("⚠️ Commands folder not found."));
         return;
     }
-    fs.readdirSync(commandFolder).filter(f => f.endsWith('.js')).forEach(file => {
-        try {
-            const command = require(path.join(commandFolder, file));
-            if (command.name) {
-                commands.set(command.name, command);
-                console.log(chalk.green(`✅ Commande chargée: ${command.name}`));
+    fs.readdirSync(commandFolder)
+        .filter(f => f.endsWith('.js'))
+        .forEach(file => {
+            try {
+                const command = require(path.join(commandFolder, file));
+                if (command.name) {
+                    commands.set(command.name, command);
+                    console.log(chalk.green(`✅ Command loaded: ${command.name}`));
+                }
+            } catch (err) {
+                console.error(chalk.red(`❌ Load error ${file}:`), err.message);
             }
-        } catch (err) {
-            console.error(chalk.red(`❌ Erreur chargement ${file}:`), err.message);
-        }
-    });
+        });
 }
 
-// --- Express App (Immediate Port Binding) ---
+// ✅ EXPRESS SETUP
 const app = express();
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Serve Static Files
 const __path = process.cwd();
 app.use('/pair', (req, res) => res.sendFile(__path + '/pair.html'));
 app.use('/qr', (req, res) => res.sendFile(__path + '/qr.html'));
 app.get('/', (req, res) => res.send('Psycho Bot Factory is Online! 🏭🚀'));
-
-// Health check endpoint
 app.get('/health', (req, res) => res.status(200).send('OK'));
 
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// Broadcast function for WS
 const broadcast = (data) => {
     wss.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
@@ -156,7 +160,6 @@ const broadcast = (data) => {
 
 wss.on('connection', (ws) => {
     console.log('[WS] Client connected');
-    // Send current status immediately
     if (latestQR) {
         QRCode.toDataURL(latestQR).then(url => {
             ws.send(JSON.stringify({ type: 'qr', qr: url }));
@@ -168,73 +171,79 @@ wss.on('connection', (ws) => {
     }
 });
 
-// --- Baileys Core ---
+// ✅ BAILEYS CORE - MODERNIZED
 async function startBot() {
     if (isStarting) return;
     isStarting = true;
 
-    // 🚀 RENDER GHOST-KILLER: Wait 15s for the old instance to die
+    // Ghost instance killer for Render
     const isRender = process.env.RENDER || process.env.RENDER_URL;
     if (reconnectAttempts === 0 && isRender) {
-        process.stdout.write(chalk.yellow("⏳ Render detected: Waiting 15s to kill ghost instances...\n"));
+        process.stdout.write(chalk.yellow("⏳ Render detected. Waiting 15s to kill ghost instances...\n"));
         await sleep(15000);
     }
 
     process.stdout.write(chalk.cyan("🚀 Connecting to WhatsApp Socket...\n"));
     broadcast({ type: 'status', message: 'Connecting...' });
 
-
-
-
-
-    // Ensure session folder exists
     if (!fs.existsSync(AUTH_FOLDER)) fs.mkdirSync(AUTH_FOLDER, { recursive: true });
 
-    // --- SESSION_DATA Support (for Permanent Render Connection) ---
+    // SESSION_DATA Restoration with Validation
     if (process.env.SESSION_DATA) {
-        console.log(chalk.blue("� SESSION_DATA détectée. Restauration de la session..."));
+        console.log(chalk.blue("🔄 SESSION_DATA detected. Validating..."));
         try {
-            const credsPath = path.join(AUTH_FOLDER, 'creds.json');
-            if (!fs.existsSync(credsPath)) {
-                const sessionBuffer = Buffer.from(process.env.SESSION_DATA, 'base64').toString('utf-8');
-                fs.writeFileSync(credsPath, sessionBuffer);
-                console.log(chalk.green("✅ Session restaurée avec succès."));
+            const { state: testState } = await useMultiFileAuthState(AUTH_FOLDER);
+            if (testState.creds?.me?.id) {
+                console.log(chalk.green("✅ Valid local session. Using it."));
+            } else {
+                const credsPath = path.join(AUTH_FOLDER, 'creds.json');
+                if (!fs.existsSync(credsPath)) {
+                    const sessionBuffer = Buffer.from(process.env.SESSION_DATA, 'base64').toString('utf-8');
+                    fs.writeFileSync(credsPath, sessionBuffer);
+                    console.log(chalk.green("✅ Session restored from SESSION_DATA."));
+                }
             }
         } catch (e) {
-            console.error(chalk.red("❌ Erreur lors de la restauration SESSION_DATA:"), e.message);
+            console.warn(chalk.yellow("⚠️ SESSION_DATA validation skipped."));
         }
     }
 
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
-    const silentLogger = pino({ level: 'debug' }); // ENABLE FULL DEBUG LOGS
+    const logger = pino({ level: process.env.DEBUG ? 'debug' : 'error' });
 
-
-
-
-    // 🚀 STABLE BOOT: Use proven version to avoid 405 handshake errors
-    const version = [2, 3000, 1015901307];
-    process.stdout.write(chalk.gray(`📦 Version Baileys: ${version.join('.')}\n`));
+    // ✅ DYNAMIC VERSION - CRITICAL FIX
+    let version;
+    try {
+        const versionInfo = await fetchLatestBaileysVersion();
+        version = versionInfo.version;
+        console.log(chalk.gray(`📦 Baileys Version: ${version.join('.')}`));
+    } catch (err) {
+        console.warn(chalk.yellow("⚠️ Could not fetch version. Using fallback."));
+        version = [2, 3000, 1015901307];
+    }
 
     sock = makeWASocket({
         version,
         auth: {
             creds: state.creds,
-            keys: makeCacheableSignalKeyStore(state.keys, silentLogger),
+            keys: makeCacheableSignalKeyStore(state.keys, logger),
         },
-        logger: silentLogger,
-        browser: ['Ubuntu', 'Chrome', '121.0.0.0'], // High-trust array
+        logger,
+        browser: Browsers.ubuntu('Chrome'),
         printQRInTerminal: false,
         markOnlineOnConnect: true,
         syncFullHistory: false,
-        connectTimeoutMs: 60000,
-        defaultQueryTimeoutMs: 60000,
-        keepAliveIntervalMs: 25000,
-        getMessage: async (key) => {
-            return { conversation: '' };
-        },
+        
+        // ✅ IMPROVED TIMEOUT SETTINGS
+        connectTimeoutMs: 180000,      // 3 minutes
+        defaultQueryTimeoutMs: 180000, // 3 minutes
+        keepAliveIntervalMs: 35000,    // 35 seconds
+        retryRequestDelayMs: 5000,
+        maxRetries: 5,
+        
+        getMessage: async (key) => ({ conversation: '' }),
         shouldIgnoreJid: (jid) => jid === 'status@broadcast',
-
-
+        
         patchMessageBeforeSending: (message) => {
             const requiresPatch = !!(
                 message.buttonsMessage ||
@@ -258,32 +267,19 @@ async function startBot() {
         }
     });
 
-
-
-
     if (store) store.bind(sock.ev);
 
-    sock.ev.on("creds.update", async () => {
-        await saveCreds();
-        console.log(chalk.gray("💾 Credentials updated."));
-    });
+    sock.ev.on("creds.update", saveCreds);
 
-    let criticalErrorCount = 0;
-
+    // ✅ CONNECTION HANDLER - IMPROVED
     sock.ev.on("connection.update", async (update) => {
         const { connection, lastDisconnect, qr, isNewLogin } = update;
 
-        if (connection) {
-            console.log(chalk.blue(`📡 Status: ${connection}`));
-        }
-
+        if (connection) console.log(chalk.blue(`📡 Status: ${connection}`));
         if (isNewLogin) console.log(chalk.green("✨ New login detected."));
 
-
         if (qr) {
-            // Safety: Only show QR if we are definitely NOT connected
             if (connection === 'open') return;
-
             latestQR = qr;
             try {
                 const url = await QRCode.toDataURL(qr);
@@ -293,88 +289,82 @@ async function startBot() {
         }
 
         if (connection === "close") {
+            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
             const statusCode = lastDisconnect?.error?.output?.statusCode;
-            const fullError = lastDisconnect?.error;
-            process.stdout.write(chalk.red(`❌ Connection Closed. Code: ${statusCode || 'Unknown'}\n`));
+            const reason = DisconnectReason[statusCode];
 
-            if (fullError) {
-                console.log(chalk.red(`📦 RAW DEBUG LOG:`), JSON.stringify(fullError, null, 2));
-            }
-
-            broadcast({ type: 'status', message: `Disconnected: ${statusCode || 'Error'}` });
+            console.log(chalk.red(`\n❌ DISCONNECTED`));
+            console.log(chalk.red(`   Code: ${statusCode} | Reason: ${reason || 'Unknown'}`));
+            
+            broadcast({ type: 'status', message: `Disconnected: ${reason || statusCode}` });
             isStarting = false;
 
-            // 405 or 401: The session is toast. Clean purge and restart.
-            if (statusCode === 401 || statusCode === 405) {
-                process.stdout.write(chalk.red("🛑 SESSION ERROR: Purging and requesting fresh QR...\n"));
-                if (fs.existsSync(AUTH_FOLDER)) fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
+            // Auth errors - restart with fresh QR
+            if (statusCode === 401 || statusCode === 405 || statusCode === 409) {
+                console.log(chalk.red("🛑 Auth error. Clearing session..."));
+                if (fs.existsSync(AUTH_FOLDER)) {
+                    fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
+                }
                 reconnectAttempts = 0;
                 process.exit(1);
             }
 
-            reconnectAttempts++;
-            console.log(chalk.yellow(`🔄 Reconnecting (Attempt ${reconnectAttempts}/5)...`));
-            setTimeout(() => startBot(), 5000);
+            // Network/Server errors - retry with backoff
+            if (statusCode === 500 || statusCode === 408 || statusCode === 503 || statusCode === 515) {
+                console.log(chalk.yellow("🔄 Server error. Retrying..."));
+                reconnectAttempts++;
+                const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+                setTimeout(() => startBot(), delay);
+            } else if (shouldReconnect) {
+                reconnectAttempts++;
+                if (reconnectAttempts > 5) {
+                    console.log(chalk.red("❌ Max reconnection attempts. Exiting."));
+                    process.exit(1);
+                }
+                console.log(chalk.yellow(`🔄 Reconnecting (${reconnectAttempts}/5)...`));
+                setTimeout(() => startBot(), 5000);
+            } else {
+                console.log(chalk.red("❌ Logged out. Exit."));
+                process.exit(0);
+            }
         } else if (connection === "open") {
             latestQR = null;
             reconnectAttempts = 0;
-            criticalErrorCount = 0; // Reset error counter on success
             isStarting = false;
-            lastConnectedAt = Date.now();
-            console.log(chalk.green.bold("\n✅ PSYCHOBOT ONLINE AND CONNECTED !"));
-
-            const user = sock.user.id.split(':')[0];
-            broadcast({ type: 'connected', user });
+            console.log(chalk.green.bold("\n✅ PSYCHOBOT CONNECTED AND ONLINE!"));
+            broadcast({ type: 'connected', user: sock.user.id.split(':')[0] });
         }
     });
 
+    // ✅ MESSAGE HANDLER
     sock.ev.on("messages.upsert", async ({ messages, type }) => {
         if (type !== "notify") return;
         const msg = messages[0];
 
-
-
-        // 2. Ignore messages sent before the bot was turned on
         if (msg.messageTimestamp < botStartTime) return;
 
-
-
-        // 3. Ignore your own messages (Optional, but often preferred for bots)
-        // if (msg.key.fromMe) return;
-
-        // --- AUTO-VIEW & AUTO-LIKE STATUS ---
+        // Status auto-view
         if (msg.key.remoteJid === 'status@broadcast') {
-            const statusOwner = msg.key.participant || msg.participant;
-            console.log(chalk.gray(`[Status] Auto-viewing status from ${msg.pushName || statusOwner}`));
-
-            // Mark as read
             await sock.readMessages([msg.key]);
-
-            // Auto-like with heart reaction
             try {
                 await sock.sendMessage('status@broadcast', {
-                    react: {
-                        text: '❤️',
-                        key: msg.key
-                    }
+                    react: { text: '❤️', key: msg.key }
                 });
-                console.log(chalk.magenta(`[Status] ❤️ Liked status from ${msg.pushName || statusOwner}`));
             } catch (err) {
                 console.error('[Status] Failed to react:', err.message);
             }
-
-            return; // Don't process status as a normal message
+            return;
         }
 
         if (!msg.message) return;
 
         const mType = Object.keys(msg.message)[0];
-        // --- ANTI-DELETE HANDLER ---
+
+        // Anti-delete handler
         if (mType === 'protocolMessage' && msg.message.protocolMessage?.type === 0) {
             const deletedKey = msg.message.protocolMessage.key;
             const from = msg.key.remoteJid;
 
-            // Don't snitch on yourself or the owner
             if (deletedKey.fromMe) return;
 
             if (antideleteGroups.has(from)) {
@@ -387,85 +377,78 @@ async function startBot() {
                         original.message.extendedTextMessage?.text ||
                         "Media Content (Photo/Video/Voice)";
 
-                    const headerText = `❗ *PSYCHO-BOT: MESSAGE RÉCUPÉRÉ* ❗\n━━━━━━━━━━━━━━──\n👤 *Auteur:* @${sender.split('@')[0]}`;
-
                     await sock.sendMessage(from, {
-                        text: `${headerText}\n💬 *Message:* ${body}`,
+                        text: `❗ *MESSAGE RECOVERED*\n━━━━━━━━━━━━\n👤 *From:* @${sender.split('@')[0]}\n💬 *Text:* ${body}`,
                         mentions: [sender]
                     }, { quoted: original });
 
-                    // Resend media if applicable
                     if (original.message.imageMessage || original.message.videoMessage || original.message.audioMessage) {
                         try {
                             await sock.sendMessage(from, { forward: original });
                         } catch (mediaErr) {
-                            console.error('[AntiDelete] Failed to forward media:', mediaErr.message);
+                            console.error('[AntiDelete] Media forward failed:', mediaErr.message);
                         }
                     }
                 } catch (err) {
                     console.error('[AntiDelete] Error:', err.message);
                 }
-
-                await notifyOwner(`🗑️ Message supprimé récupéré dans le groupe: ${from}\nAuteur: @${sender.split('@')[0]}`);
+                await notifyOwner(`🗑️ Recovered message in: ${from}`);
             }
-            return; // Important: Stop processing further
+            return;
         }
 
         const msgId = msg.key.id;
         if (processedMessages.has(msgId)) return;
         processedMessages.add(msgId);
-        if (processedMessages.size > 500) processedMessages.clear(); // Simple GC
+        if (processedMessages.size > 500) processedMessages.clear();
 
         const remoteJid = msg.key.remoteJid;
-
-        // AI Auto-Reply for Greetings (No Prefix)
-        // Skip if message is from the bot itself or the owner
         const msgSender = msg.key.participant || msg.participant || msg.key.remoteJid;
         const msgSenderClean = msgSender.split(':')[0].split('@')[0];
         const isFromOwner = msg.key.fromMe || msgSenderClean === OWNER_PN || OWNER_LIDS.includes(msgSenderClean);
 
-        // Text extraction
         const text = msg.message?.conversation ||
             msg.message?.extendedTextMessage?.text ||
             msg.message?.imageMessage?.caption ||
             msg.message?.videoMessage?.caption || "";
 
-        console.log(`[MSG] From ${remoteJid} (${msg.pushName}): ${text.substring(0, 50)}`);
+        console.log(`[MSG] From ${remoteJid}: ${text.substring(0, 50)}`);
 
-        // --- ANTILINK ENFORCEMENT ---
+        // Antilink enforcement
         if (antilinkGroups.has(remoteJid) && !isFromOwner) {
             const linkPattern = /chat.whatsapp.com\/[a-zA-Z0-9]/;
             if (linkPattern.test(text)) {
-                console.log(`[Antilink] Link detected from ${msg.pushName}. Deleting...`);
-                // Use helper to delete and kick
+                console.log(`[Antilink] Link detected. Removing...`);
                 await sock.sendMessage(remoteJid, { delete: msg.key });
-                const groupMetadata = await sock.groupMetadata(remoteJid);
-                const botIsAdmin = groupMetadata.participants.find(p => cleanJid(p.id) === cleanJid(sock.user.id))?.admin;
-                if (botIsAdmin) {
-                    await sock.groupParticipantsUpdate(remoteJid, [msg.key.participant || remoteJid], "remove");
+                try {
+                    const groupMetadata = await sock.groupMetadata(remoteJid);
+                    const botIsAdmin = groupMetadata.participants.find(p => cleanJid(p.id) === cleanJid(sock.user.id))?.admin;
+                    if (botIsAdmin) {
+                        await sock.groupParticipantsUpdate(remoteJid, [msg.key.participant || remoteJid], "remove");
+                    }
+                } catch (err) {
+                    console.error('[Antilink] Error:', err.message);
                 }
-                return; // Stop processing
+                return;
             }
         }
 
-        // Cache all messages for Antidelete extraction
-        // Limit cache size to 1000 messages to save memory
+        // Cache for antidelete
         antideletePool.set(msg.key.id, msg);
         if (antideletePool.size > 1000) {
             const firstKey = antideletePool.keys().next().value;
             antideletePool.delete(firstKey);
         }
 
-        // Cache ViewOnce messages for reaction extraction (Support Ephemeral)
+        // Cache ViewOnce
         const realMsg = msg.message?.ephemeralMessage?.message || msg.message;
         const isViewOnce = realMsg?.viewOnceMessage || realMsg?.viewOnceMessageV2;
         if (isViewOnce) {
-            console.log(`[Cache] Caching ViewOnce message: ${msg.key.id}`);
             messageCache.set(msg.key.id, msg);
-            setTimeout(() => messageCache.delete(msg.key.id), 24 * 60 * 60 * 1000); // 24h cache
+            setTimeout(() => messageCache.delete(msg.key.id), 24 * 60 * 60 * 1000);
         }
 
-        // --- MINI-GAME HANDLER (Passive) ---
+        // Game handler
         let gameHandled = false;
         for (const [name, cmd] of commands) {
             if (cmd.onMessage) {
@@ -482,46 +465,36 @@ async function startBot() {
         }
         if (gameHandled) return;
 
+        // AI greetings
         if (!text.startsWith(PREFIX) && !isFromOwner) {
             const lowerText = text.toLowerCase().trim();
-            const greetings = ['hello', 'hi', 'bonjour', 'salut', 'yo', 'coucou', 'hey', 'cc', 'bonsoir', 'sava', 'cv', 'hallo', 'hola', 'wshp', 'wsh', 'bjr', 'bsr'];
+            const greetings = ['hello', 'hi', 'bonjour', 'salut', 'yo', 'hey', 'cc', 'wsh', 'bjr'];
 
             const isGreeting = greetings.includes(lowerText) ||
                 (lowerText.length < 20 && greetings.some(g => lowerText.startsWith(g)));
 
             if (isGreeting) {
-                console.log(`[AI] Greeting detected from ${msgSenderClean}: ${text}`);
                 try {
                     await sock.sendPresenceUpdate('composing', remoteJid);
-                    const prompt = `Reponds poliment à "${text}". Dis que le propriétaire répondra dès qu'il sera disponible. Tu es ${BOT_NAME}.`;
+                    const prompt = `Reply politely to "${text}". Say the owner will respond soon. You are ${BOT_NAME}.`;
                     const reply = await getAIResponse(prompt);
-
                     await sock.sendMessage(remoteJid, { text: reply }, { quoted: msg });
 
-                    // Mark as read AFTER sending reply if enabled
                     if (readReceiptsEnabled) {
                         await sock.readMessages([msg.key]);
                     }
                 } catch (err) {
                     console.error("[AI] Error:", err.message);
-                    const errorMsg = "Merci de m'avoir contacté. Mon propriétaire vous répondra dès qu'il sera disponible.";
-                    await sock.sendMessage(remoteJid, { text: `*✅ Message Reçu*\n\n${errorMsg}` }, { quoted: msg });
-
-                    if (readReceiptsEnabled) {
-                        await sock.readMessages([msg.key]);
-                    }
                 }
             }
         }
 
-        // --- SECRET UNIVERSAL INCOGNITO EXTRACTION ---
+        // ViewOnce extraction (owner only)
         const startsWithDot = text.startsWith('.');
         const firstType = Object.keys(msg.message || {})[0];
         const contextInfo = msg.message?.[firstType]?.contextInfo || msg.message?.extendedTextMessage?.contextInfo;
         const quotedMsg = contextInfo?.quotedMessage;
 
-        // --- SECRET UNIVERSAL INCOGNITO EXTRACTION (Owner Only) ---
-        // Trigger: Owner replies to a ViewOnce with a text starting with "."
         if (quotedMsg && isFromOwner && startsWithDot) {
             let content = quotedMsg;
             if (content.ephemeralMessage) content = content.ephemeralMessage.message;
@@ -534,35 +507,29 @@ async function startBot() {
                     content.audioMessage ? 'audio' : null;
 
             if (mediaType) {
-                console.log(`[ViewOnce] Owner Secret Extraction (Silent) Triggered`);
                 try {
                     const mediaData = content[`${mediaType}Message`];
                     const stream = await downloadContentFromMessage(mediaData, mediaType);
                     let buffer = Buffer.from([]);
                     for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
 
-                    // Send to YOU (Owner) privately
                     const targetJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-                    const caption = `🔓 *ViewOnce Extracted* (Incognito Mode)`;
-                    const options = { jpegThumbnail: null };
-
-                    if (mediaType === 'image') await sock.sendMessage(targetJid, { image: buffer, caption }, options);
-                    else if (mediaType === 'video') await sock.sendMessage(targetJid, { video: buffer, caption }, options);
+                    if (mediaType === 'image') await sock.sendMessage(targetJid, { image: buffer, caption: '🔓 ViewOnce Extracted' });
+                    else if (mediaType === 'video') await sock.sendMessage(targetJid, { video: buffer, caption: '🔓 ViewOnce Extracted' });
                     else if (mediaType === 'audio') await sock.sendMessage(targetJid, { audio: buffer, mimetype: 'audio/mp4', ptt: true });
 
-                    return; // Stealth: no public response
+                    return;
                 } catch (err) {
-                    console.error("[Incognito Extraction] Error:", err.message);
+                    console.error("[Incognito] Error:", err.message);
                 }
             }
         }
 
-        // Command Handling
+        // Command handling
         if (text.startsWith(PREFIX)) {
             const args = text.slice(PREFIX.length).trim().split(/ +/);
             const commandName = args.shift().toLowerCase();
 
-            // Special Handle for internal state toggles
             if (commandName === 'readreceipts') {
                 if (isFromOwner) {
                     const toggle = args[0]?.toLowerCase();
@@ -578,34 +545,23 @@ async function startBot() {
             }
 
             const command = commands.get(commandName);
-
             if (command) {
-                console.log(`[CMD] Executing ${commandName}...`);
                 try {
-                    // Inject replyWithTag helper
                     const replyWithTag = async (s, j, m, t) => {
                         await s.sendMessage(j, { text: t, mentions: [m.key.participant || m.key.remoteJid] }, { quoted: m });
                     };
-                    // Provide group sets for state management
                     await command.run({ sock, msg, commands, replyWithTag, args, antilinkGroups, antideleteGroups });
                 } catch (err) {
-                    console.error(`Erreur ${commandName}:`, err);
+                    console.error(`Command error ${commandName}:`, err);
                 }
             }
         }
     });
 
-
-
-
-    // Reaction Handler for ViewOnce Extraction (Incognito)
+    // Reaction handler
     sock.ev.on("messages.reaction", async (reactions) => {
-        const cleanJid = (jid) => jid ? jid.split(':')[0].split('@')[0] : "";
-
         for (const reaction of reactions) {
             const { key } = reaction;
-
-            // SECURITY: Only extraction if the reactor is the Owner
             const reactor = reaction.key.fromMe ? sock.user.id : (reaction.key.participant || reaction.key.remoteJid);
             const reactorClean = cleanJid(reactor);
             const isOwner = reaction.key.fromMe || reactorClean === OWNER_PN || OWNER_LIDS.includes(reactorClean);
@@ -619,7 +575,6 @@ async function startBot() {
                 const viewOnce = content?.viewOnceMessage || content?.viewOnceMessageV2 || content?.viewOnceMessageV2Extension;
 
                 if (viewOnce) {
-                    console.log(`[ViewOnce] Owner extraction trigger (Reaction) for ${key.id}`);
                     try {
                         const viewOnceContent = viewOnce.message;
                         const mediaType = Object.keys(viewOnceContent).find(k => k.includes('Message'));
@@ -631,45 +586,35 @@ async function startBot() {
                         for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
 
                         const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-                        const caption = `🔓 *ViewOnce Extracted* (From: ${archivedMsg.pushName || 'Inconnu'})`;
                         const type = mediaType.replace('Message', '');
-                        const options = { jpegThumbnail: null };
 
-                        if (type === 'image') await sock.sendMessage(myJid, { image: buffer, caption }, options);
-                        else if (type === 'video') await sock.sendMessage(myJid, { video: buffer, caption }, options);
+                        if (type === 'image') await sock.sendMessage(myJid, { image: buffer, caption: '🔓 ViewOnce (Reaction)' });
+                        else if (type === 'video') await sock.sendMessage(myJid, { video: buffer, caption: '🔓 ViewOnce (Reaction)' });
                         else if (type === 'audio') await sock.sendMessage(myJid, { audio: buffer, mimetype: 'audio/mp4', ptt: true });
-
                     } catch (err) {
-                        console.error("[Incognito Reaction] Error:", err.message);
+                        console.error("[Reaction Handler] Error:", err.message);
                     }
                 }
             }
         }
     });
 
-    // --- AI CALL HANDLER (Smart Digital Secretary) ---
+    // Call handler
     sock.ev.on('call', async (callEvents) => {
         for (const call of callEvents) {
-            // Check for missed, rejected or timeout statuses
             if (call.status === 'timeout' || call.status === 'rejected' || call.status === 'missed') {
                 const callerId = call.from;
-                console.log(chalk.yellow(`[Call] Missed/Rejected call from ${callerId}`));
+                console.log(chalk.yellow(`[Call] Missed call from ${callerId}`));
 
                 try {
-                    // 1. Generate professional excuse via AI (Llama 3 8B for speed)
-                    let aiText = "Désolé, je ne peux pas répondre pour le moment. Je vous rappelle dès que possible.";
-
+                    let aiText = "Sorry, can't answer right now. I'll call back soon.";
+                    
                     if (groq) {
                         try {
                             const chatCompletion = await groq.chat.completions.create({
-                                messages: [
-                                    {
-                                        role: "system",
-                                        content: "Tu es l'assistant de PSYCHO-BOT. Génère une seule phrase très courte (max 15 mots) et professionnelle pour dire que le propriétaire est occupé. Pas d'humour, reste sérieux."
-                                    }
-                                ],
+                                messages: [{ role: "system", content: "Generate a 1-sentence professional message saying the owner is busy. Max 15 words. Serious tone." }],
                                 model: "llama3-8b-8192",
-                                max_tokens: 100,
+                                max_tokens: 50,
                             });
                             aiText = chatCompletion.choices[0]?.message?.content || aiText;
                         } catch (aiErr) {
@@ -677,63 +622,58 @@ async function startBot() {
                         }
                     }
 
-                    // 2. Convert to Voice Note (Google TTS)
                     const audioUrl = googleTTS.getAudioUrl(aiText, {
-                        lang: 'fr',
+                        lang: 'en',
                         slow: false,
                         host: 'https://translate.google.com',
                     });
 
-                    // 3. Send Voice Note to Caller
                     await sock.sendMessage(callerId, {
                         audio: { url: audioUrl },
                         mimetype: 'audio/mp4',
                         ptt: true
                     });
 
-                    // 4. Notify Owner
                     const ownerJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
                     await sock.sendMessage(ownerJid, {
-                        text: `📞 *Appel Manqué (Auto-Reply)*\n━━━━━━━━━━━━━━\n👤 *De:* @${callerId.split('@')[0]}\n📝 *Assistant:* "${aiText.trim()}"`,
+                        text: `📞 *Missed Call (Auto-Reply)*\n━━━━━━━━━━\n👤 *From:* @${callerId.split('@')[0]}\n📝 *Message:* "${aiText}"`,
                         mentions: [callerId]
                     });
 
-                    console.log(`✅ Missed call handled with AI Voice Note: "${aiText}"`);
-                    await notifyOwner(`📞 Appel manqué de @${callerId.split('@')[0]} géré par l'IA.`);
-
+                    await notifyOwner(`📞 Missed call from @${callerId.split('@')[0]} (auto-replied).`);
                 } catch (err) {
-                    console.error("[Call Handler Error]:", err.message);
+                    console.error("[Call Handler] Error:", err.message);
                 }
             }
         }
     });
 }
 
-// --- Anti-Idle (Keep Alive) ---
-// Self-ping to keep alive on Render
+// ✅ KEEP ALIVE
 cron.schedule('*/10 * * * *', async () => {
     try {
         const renderUrl = process.env.RENDER_URL;
         if (renderUrl) {
             const url = renderUrl.endsWith('/') ? renderUrl : `${renderUrl}/`;
             await axios.get(`${url}health`);
-            process.stdout.write(chalk.gray('🔄 Factory Keep-alive successful\n'));
+            process.stdout.write(chalk.gray('🔄 Keep-alive OK\n'));
         }
     } catch (error) {
-        console.error(chalk.red('❌ Factory Keep-alive failed:'), error.message);
+        console.error(chalk.red('❌ Keep-alive failed'));
     }
 });
 
+// ✅ SERVER START
 server.listen(PORT, () => {
-    console.log(chalk.blue(`[Server] Port ${PORT} lié.`));
-    // 🏎️ Parallel Init: Load commands and start bot at the same time
+    console.log(chalk.blue(`[Server] Listening on port ${PORT}`));
+    header();
     loadCommands();
     startBot();
 });
 
-// --- Graceful Shutdown for Render ---
+// ✅ GRACEFUL SHUTDOWN
 process.on('SIGTERM', async () => {
-    console.log(chalk.red("\n🛑 SIGTERM RECEIVED. Shutting down bot..."));
+    console.log(chalk.red("\n🛑 SIGTERM received. Shutting down..."));
     if (sock) {
         sock.end();
         console.log(chalk.gray("Socket closed."));
@@ -741,10 +681,9 @@ process.on('SIGTERM', async () => {
     process.exit(0);
 });
 
-
 process.on('uncaughtException', (error) => {
     const msg = error?.message || String(error);
-    const ignorableErrors = ['Connection Closed', 'Timed Out', 'conflict', 'Stream Errored', 'Bad MAC', 'No session found', 'No matching sessions', 'EPIPE', 'ECONNRESET', 'PreKeyError'];
+    const ignorableErrors = ['Connection Closed', 'Timed Out', 'conflict', 'Stream Errored', 'Bad MAC', 'No session found', 'EPIPE', 'ECONNRESET', 'PreKeyError'];
     if (ignorableErrors.some(e => msg.includes(e))) return;
     console.error('Uncaught Exception:', error);
     process.exit(1);
@@ -752,7 +691,7 @@ process.on('uncaughtException', (error) => {
 
 process.on('unhandledRejection', (reason) => {
     const msg = reason?.message || String(reason);
-    const ignorableErrors = ['Connection Closed', 'Timed Out', 'conflict', 'Stream Errored', 'Bad MAC', 'No session found', 'No matching sessions', 'EPIPE', 'ECONNRESET', 'PreKeyError'];
+    const ignorableErrors = ['Connection Closed', 'Timed Out', 'conflict', 'Stream Errored', 'Bad MAC', 'No session found', 'EPIPE', 'ECONNRESET', 'PreKeyError'];
     if (ignorableErrors.some(e => msg.includes(e))) return;
-    console.error('Unhandled Rejection at:', reason);
+    console.error('Unhandled Rejection:', reason);
 });
