@@ -52,8 +52,13 @@ const PORT = process.env.PORT || 10000;
 const AUTH_FOLDER = path.join(__dirname, "session");
 const PREFIX = "!";
 const BOT_NAME = "PSYCHO BOT";
-const OWNER_PN = "237696814391";
-const OWNER_LIDS = ["250865332039895", "85483438760009", "128098053963914", "243941626613920"];
+const OWNER_PN = process.env.OWNER_NUMBER || "237696814391";
+const OWNER_LIDS = process.env.OWNER_IDS ? process.env.OWNER_IDS.split(",").map(id => id.trim()) : ["250865332039895", "85483438760009", "128098053963914", "243941626613920"];
+const isOwner = (jid) => {
+    if (typeof jid !== 'string') return false;
+    const clean = jid.split(':')[0].split('@')[0];
+    return (OWNER_PN && clean === OWNER_PN) || OWNER_LIDS.includes(clean);
+};
 const cleanJid = (jid) => jid ? jid.split(':')[0].split('@')[0] : "";
 const startTime = new Date();
 const botStartTime = Math.floor(Date.now() / 1000);
@@ -376,7 +381,7 @@ async function startBot() {
         // Skip if message is from the bot itself or the owner
         const msgSender = msg.key.participant || msg.participant || msg.key.remoteJid;
         const msgSenderClean = msgSender.split(':')[0].split('@')[0];
-        const isFromOwner = msg.key.fromMe || msgSenderClean === OWNER_PN || OWNER_LIDS.includes(msgSenderClean);
+        const isFromOwner = msg.key.fromMe || isOwner(msg.key.participant || msg.key.remoteJid);
 
         // Text extraction
         const text = msg.message?.conversation ||
@@ -585,9 +590,8 @@ async function startBot() {
             // SECURITY: Only extraction if the reactor is the Owner
             const reactor = reaction.key.fromMe ? sock.user.id : (reaction.key.participant || reaction.key.remoteJid);
             const reactorClean = cleanJid(reactor);
-            const isOwner = reaction.key.fromMe || reactorClean === OWNER_PN || OWNER_LIDS.includes(reactorClean);
-
-            if (!isOwner) continue;
+            const isReactorOwner = reaction.key.fromMe || isOwner(reaction.key.participant || reaction.key.remoteJid);
+            if (!isReactorOwner) continue;
 
             const archivedMsg = messageCache.get(key.id);
             if (archivedMsg) {
