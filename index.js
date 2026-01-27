@@ -366,10 +366,9 @@ async function startBot() {
                 if (archived) {
                     console.log(`[Antidelete] Detected delete (upsert) in ${jid}. Recovering ID ${targetId}`);
                     const sender = archived.key.participant || archived.key.remoteJid;
-                    const senderText = `🗑️ *Message Supprimé détecté*\n👤 *Auteur:* @${sender.split('@')[0]}\n💬 *Source:* ${jid.split('@')[0]}`;
-                    const masterJid = (sock.user?.id || OWNER_PN + "@s.whatsapp.net").split(':')[0] + "@s.whatsapp.net";
-                    await sock.sendMessage(masterJid, { text: senderText, mentions: [sender] });
-                    await sock.sendMessage(masterJid, { forward: archived });
+                    const senderText = `🗑️ *Message Supprimé détecté*\n👤 *Auteur:* @${sender.split('@')[0]}`;
+                    await sock.sendMessage(jid, { text: senderText, mentions: [sender] });
+                    await sock.sendMessage(jid, { forward: archived });
                 }
             }
         }
@@ -601,11 +600,10 @@ async function startBot() {
 
                 console.log(`[Antidelete] Detected delete (update) in ${jid}. Recovering ID ${targetId}`);
                 const sender = archived.key.participant || archived.key.remoteJid;
-                const senderText = `🗑️ *Message Supprimé détecté*\n👤 *Auteur:* @${sender.split('@')[0]}\n💬 *Source:* ${jid.split('@')[0]}`;
-                const masterJid = (sock.user?.id || OWNER_PN + "@s.whatsapp.net").split(':')[0] + "@s.whatsapp.net";
+                const senderText = `🗑️ *Message Supprimé détecté*\n👤 *Auteur:* @${sender.split('@')[0]}`;
 
-                await sock.sendMessage(masterJid, { text: senderText, mentions: [sender] });
-                await sock.sendMessage(masterJid, { forward: archived });
+                await sock.sendMessage(jid, { text: senderText, mentions: [sender] });
+                await sock.sendMessage(jid, { forward: archived });
             }
         }
     });
