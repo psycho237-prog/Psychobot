@@ -189,16 +189,18 @@ async function startBot() {
 
     // --- SESSION_DATA Support (for Permanent Render Connection) ---
     if (process.env.SESSION_DATA) {
-        console.log(chalk.blue("� SESSION_DATA détectée. Restauration de la session..."));
+        console.log(chalk.blue("🔹 SESSION_DATA détectée. Restauration de la session..."));
         try {
             const credsPath = path.join(AUTH_FOLDER, 'creds.json');
-            if (!fs.existsSync(credsPath)) {
-                const sessionBuffer = Buffer.from(process.env.SESSION_DATA, 'base64').toString('utf-8');
-                fs.writeFileSync(credsPath, sessionBuffer);
-                console.log(chalk.green("✅ Session restaurée avec succès."));
-            }
+            const sessionBuffer = Buffer.from(process.env.SESSION_DATA, 'base64').toString('utf-8');
+
+            // Validate JSON before writing
+            JSON.parse(sessionBuffer);
+
+            fs.writeFileSync(credsPath, sessionBuffer);
+            console.log(chalk.green("✅ Session (creds.json) restaurée avec succès depuis l'environnement."));
         } catch (e) {
-            console.error(chalk.red("❌ Erreur lors de la restauration SESSION_DATA:"), e.message);
+            console.error(chalk.red("❌ Erreur lors de la restauration SESSION_DATA (vérifiez le format Base64):"), e.message);
         }
     }
 
