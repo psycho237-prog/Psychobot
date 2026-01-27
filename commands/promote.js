@@ -10,13 +10,15 @@ module.exports = {
         const cleanJid = (jid) => jid ? jid.split(':')[0].split('@')[0] : "";
         const sender = msg.key.participant || msg.participant || msg.key.remoteJid;
         const senderClean = cleanJid(sender);
+        const OWNER_PN = "237696814391";
+        const OWNER_LID = "250865332039895";
 
         const senderIsAdmin = groupMetadata.participants.some(p => {
             const pClean = cleanJid(p.id);
             return pClean === senderClean && (p.admin === "admin" || p.admin === "superadmin");
         });
 
-        const isOwner = msg.key.fromMe;
+        const isOwner = senderClean === OWNER_PN || senderClean === OWNER_LID;
         const canExecute = isOwner || senderIsAdmin;
 
         if (!canExecute) {

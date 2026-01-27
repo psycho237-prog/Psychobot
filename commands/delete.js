@@ -10,6 +10,8 @@ module.exports = {
         const cleanJid = (jid) => jid ? jid.split(':')[0].split('@')[0] : "";
         const sender = msg.key.participant || msg.participant || msg.key.remoteJid;
         const senderClean = cleanJid(sender);
+        const OWNER_PN = "237696814391";
+        const OWNER_LID = "250865332039895";
 
         let isAdmin = false;
         if (groupMetadata) {
@@ -19,7 +21,7 @@ module.exports = {
             });
         }
 
-        const isOwner = msg.key.fromMe;
+        const isOwner = senderClean === OWNER_PN || senderClean === OWNER_LID;
         const canExecute = isOwner || isAdmin;
 
         if (!canExecute && from.endsWith("@g.us")) {

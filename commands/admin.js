@@ -16,7 +16,17 @@ module.exports = {
         // JID Normalizer for Owner Check
         const cleanJid = (jid) => jid ? jid.split(':')[0].split('@')[0] : "";
         const msgSender = msg.key.participant || msg.participant || msg.key.remoteJid;
-        const isOwner = msg.key.fromMe;
+        const msgSenderClean = cleanJid(msgSender);
+        const OWNER_PN = "237696814391";
+        const OWNER_LID = "250865332039895";
+
+        const groupMetadata = remoteJid.endsWith("@g.us") ? await sock.groupMetadata(remoteJid) : null;
+        const senderIsAdmin = groupMetadata?.participants.some(p => {
+            const pClean = cleanJid(p.id);
+            return pClean === msgSenderClean && (p.admin === "admin" || p.admin === "superadmin");
+        });
+
+        const isOwner = msgSenderClean === OWNER_PN || msgSenderClean === OWNER_LID;
 
         // Restriction: Only show if sender is admin or owner
         if (!isOwner && !senderIsAdmin) {

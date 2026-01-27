@@ -1,9 +1,6 @@
 {
   "name": "psychobot-v2",
   "version": "0.0.1",
-  "config": {
-    "sharp_ignore_global_libvips": "1"
-  },
   "type": "commonjs",
   "description": "A multi-functional WhatsApp bot Pairing Web and QR Scanner.",
   "main": "index.js",
@@ -54,8 +51,8 @@
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@google/generative-ai": "^0.24.1",
     "@hapi/boom": "^10.0.1",
-    "@whiskeysockets/baileys": "6.7.16",
-    "axios": "^1.13.2",
+    "@whiskeysockets/baileys": "latest",
+    "axios": "^1.6.0",
     "body-parser": "^1.20.1",
     "chalk": "^4.1.2",
     "denethdev-ytmp3": "^1.0.2",
@@ -63,15 +60,13 @@
     "express": "^4.18.1",
     "ffmpeg-static": "^5.1.0",
     "figlet": "^1.7.0",
-    "firebase-admin": "^13.6.0",
     "fluent-ffmpeg": "^2.1.3",
     "form-data": "^4.0.0",
     "fs-extra": "^11.3.0",
     "google-tts-api": "^2.0.2",
     "groq-sdk": "^0.37.0",
-    "node-cron": "^4.2.1",
+    "node-cron": "^3.0.3",
     "node-fetch": "^2.6.1",
-    "node-gyp": "^10.2.0",
     "pastebin-api": "^7.0.0",
     "pastebin-js": "^1.0.5",
     "path": "^0.12.7",
@@ -80,11 +75,11 @@
     "pm2": "^5.4.3",
     "qrcode": "^1.5.3",
     "qrcode-terminal": "^0.12.0",
-    "sharp": "0.32.6",
+    "sharp": "^0.33.2",
     "sqlite3": "^5.1.7",
     "unzipper": "^0.10.14",
     "youtube-sr": "^4.3.12",
-    "yt-dlp-exec": "^1.0.2",
-    "yt-search": "^2.10.4"
+    "yt-search": "^2.10.4",
+    "ws": "^8.18.0"
   }
 }
