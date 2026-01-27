@@ -364,8 +364,10 @@ async function startBot() {
                 if (!targetId) return;
                 const archived = antideletePool.get(targetId);
                 if (archived) {
-                    console.log(`[Antidelete] Detected delete (upsert) in ${jid}. Recovering ID ${targetId}`);
                     const sender = archived.key.participant || archived.key.remoteJid;
+                    if (archived.key.fromMe || isOwner(sender)) return; // Don't recover owner deletions
+
+                    console.log(`[Antidelete] Detected delete (upsert) in ${jid}. Recovering ID ${targetId}`);
                     const senderText = `🗑️ *Message Supprimé détecté*\n👤 *Auteur:* @${sender.split('@')[0]}`;
                     await sock.sendMessage(jid, { text: senderText, mentions: [sender] });
                     await sock.sendMessage(jid, { forward: archived });
@@ -598,8 +600,10 @@ async function startBot() {
                 const archived = antideletePool.get(targetId);
                 if (!archived) continue;
 
-                console.log(`[Antidelete] Detected delete (update) in ${jid}. Recovering ID ${targetId}`);
                 const sender = archived.key.participant || archived.key.remoteJid;
+                if (archived.key.fromMe || isOwner(sender)) continue; // Don't recover owner deletions
+
+                console.log(`[Antidelete] Detected delete (update) in ${jid}. Recovering ID ${targetId}`);
                 const senderText = `🗑️ *Message Supprimé détecté*\n👤 *Auteur:* @${sender.split('@')[0]}`;
 
                 await sock.sendMessage(jid, { text: senderText, mentions: [sender] });
