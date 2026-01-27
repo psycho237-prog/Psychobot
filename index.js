@@ -74,6 +74,31 @@ async function notifyOwner(text) {
     }
 }
 
+async function syncSessionToRender() {
+    const apiKey = process.env.RENDER_API_KEY;
+    const serviceId = process.env.RENDER_SERVICE_ID;
+    if (!apiKey || !serviceId) return;
+
+    try {
+        const credsPath = path.join(AUTH_FOLDER, 'creds.json');
+        if (!fs.existsSync(credsPath)) return;
+
+        const creds = fs.readFileSync(credsPath, 'utf-8');
+        const sessionBase64 = Buffer.from(creds).toString('base64');
+
+        if (process.env.SESSION_DATA === sessionBase64) return;
+
+        console.log(chalk.blue("📤 [Render API] Sauvegarde automatique de la session..."));
+        await axios.patch(`https://api.render.com/v1/services/${serviceId}/env-vars`,
+            [{ key: "SESSION_DATA", value: sessionBase64 }],
+            { headers: { Authorization: `Bearer ${apiKey}`, "Accept": "application/json", "Content-Type": "application/json" } }
+        );
+        console.log(chalk.green("✅ [Render API] Session sauvegardée ! Le bot va redémarrer pour appliquer la persistance."));
+    } catch (error) {
+        console.error(chalk.red("❌ [Render API] Échec de la sauvegarde:"), error.response?.data || error.message);
+    }
+}
+
 let reconnectAttempts = 0;
 let isStarting = false;
 let latestQR = null;
@@ -241,7 +266,10 @@ async function startBot() {
         shouldIgnoreJid: (jid) => jid?.includes('@newsletter') || jid === 'status@broadcast'
     });
 
-    sock.ev.on("creds.update", saveCreds);
+    sock.ev.on("creds.update", async () => {
+        await saveCreds();
+        if (sock?.user) await syncSessionToRender();
+    });
 
     let criticalErrorCount = 0;
 
