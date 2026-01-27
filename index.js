@@ -330,13 +330,14 @@ async function startBot() {
             const jid = msg.key.remoteJid;
             const isGroup = jid.endsWith('@g.us');
             if (!isGroup || antideleteGroups.has(jid)) {
-                const targetId = msg.message.protocolMessage.key.id;
+                const targetId = msg.message.protocolMessage.key?.id;
+                if (!targetId) return;
                 const archived = antideletePool.get(targetId);
                 if (archived) {
                     console.log(`[Antidelete] Detected delete (upsert) in ${jid}. Recovering ID ${targetId}`);
                     const sender = archived.key.participant || archived.key.remoteJid;
                     const senderText = `🗑️ *Message Supprimé détecté*\n👤 *Auteur:* @${sender.split('@')[0]}\n💬 *Source:* ${jid.split('@')[0]}`;
-                    const masterJid = sock.user.id.split(':')[0] + "@s.whatsapp.net";
+                    const masterJid = (sock.user?.id || OWNER_PN + "@s.whatsapp.net").split(':')[0] + "@s.whatsapp.net";
                     await sock.sendMessage(masterJid, { text: senderText, mentions: [sender] });
                     await sock.sendMessage(masterJid, { forward: archived });
                 }
