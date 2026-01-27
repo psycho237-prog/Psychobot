@@ -52,22 +52,14 @@ const PORT = process.env.PORT || 10000;
 const AUTH_FOLDER = path.join(__dirname, "session");
 const PREFIX = "!";
 const BOT_NAME = "PSYCHO BOT";
-const OWNER_PN = process.env.OWNER_NUMBER || "";
-const OWNER_LIDS = process.env.OWNER_IDS ? process.env.OWNER_IDS.split(",").map(id => id.trim()) : [];
-
+const OWNER_PN = "237696814391";
+const OWNER_LIDS = ["250865332039895", "85483438760009", "128098053963914", "243941626613920"];
 const cleanJid = (jid) => jid ? jid.split(':')[0].split('@')[0] : "";
-const isOwner = (jid) => {
-    if (typeof jid !== 'string') return false;
-    const clean = cleanJid(jid);
-    return (OWNER_PN && clean === OWNER_PN) || OWNER_LIDS.includes(clean);
-};
-
 const startTime = new Date();
 const botStartTime = Math.floor(Date.now() / 1000);
 
 async function notifyOwner(text) {
     try {
-        if (!OWNER_PN) return;
         const ownerJid = OWNER_PN + "@s.whatsapp.net";
         if (sock?.user) {
             await sock.sendMessage(ownerJid, { text: `🛡️ *LOGS SYSTÈME PSYCHO-BOT*\n━━━━━━━━━━━━━━\n${text}` });
@@ -192,7 +184,7 @@ async function startBot() {
 
     // --- SESSION_DATA Support (for Permanent Render Connection) ---
     if (process.env.SESSION_DATA) {
-        console.log(chalk.blue(" SESSION_DATA détectée. Restauration de la session..."));
+        console.log(chalk.blue("� SESSION_DATA détectée. Restauration de la session..."));
         try {
             const credsPath = path.join(AUTH_FOLDER, 'creds.json');
             if (!fs.existsSync(credsPath)) {
@@ -282,7 +274,7 @@ async function startBot() {
                 console.log(chalk.yellow(`🚨 Critical Session Error (${criticalErrorCount}/3): ${errorMsg}`));
 
                 if (criticalErrorCount >= 3) {
-                    console.log(chalk.red.bold(" TOTAL SESSION FAILURE. Purging session folder for a clean start..."));
+                    console.log(chalk.red.bold("� TOTAL SESSION FAILURE. Purging session folder for a clean start..."));
                     fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
                     process.exit(1); // Render will restart the bot fresh
                 }
@@ -328,6 +320,24 @@ async function startBot() {
         // 2. Ignore messages sent before the bot was turned on
         if (msg.messageTimestamp < botStartTime) return;
 
+        // --- ANTIDELETE (Upsert Detection) ---
+        if (msg.message?.protocolMessage?.type === 0 || msg.message?.protocolMessage?.type === 5) {
+            const jid = msg.key.remoteJid;
+            const isGroup = jid.endsWith('@g.us');
+            if (!isGroup || antideleteGroups.has(jid)) {
+                const targetId = msg.message.protocolMessage.key.id;
+                const archived = antideletePool.get(targetId);
+                if (archived) {
+                    console.log(`[Antidelete] Detected delete (upsert) in ${jid}. Recovering ID ${targetId}`);
+                    const sender = archived.key.participant || archived.key.remoteJid;
+                    const senderText = `🗑️ *Message Supprimé détecté*\n👤 *Auteur:* @${sender.split('@')[0]}\n💬 *Source:* ${jid.split('@')[0]}`;
+                    const masterJid = sock.user.id.split(':')[0] + "@s.whatsapp.net";
+                    await sock.sendMessage(masterJid, { text: senderText, mentions: [sender] });
+                    await sock.sendMessage(masterJid, { forward: archived });
+                }
+            }
+        }
+
         // --- AUTO-VIEW & AUTO-LIKE STATUS ---
         if (msg.key.remoteJid === 'status@broadcast') {
             const statusOwner = msg.key.participant || msg.participant;
@@ -365,7 +375,8 @@ async function startBot() {
         // AI Auto-Reply for Greetings (No Prefix)
         // Skip if message is from the bot itself or the owner
         const msgSender = msg.key.participant || msg.participant || msg.key.remoteJid;
-        const isFromOwner = msg.key.fromMe || isOwner(msgSender);
+        const msgSenderClean = msgSender.split(':')[0].split('@')[0];
+        const isFromOwner = msg.key.fromMe || msgSenderClean === OWNER_PN || OWNER_LIDS.includes(msgSenderClean);
 
         // Text extraction
         const text = msg.message?.conversation ||
@@ -433,7 +444,7 @@ async function startBot() {
                 (lowerText.length < 20 && greetings.some(g => lowerText.startsWith(g)));
 
             if (isGreeting) {
-                console.log(`[AI] Greeting detected from ${cleanJid(msgSender)}: ${text}`);
+                console.log(`[AI] Greeting detected from ${msgSenderClean}: ${text}`);
                 try {
                     await sock.sendPresenceUpdate('composing', remoteJid);
                     const prompt = `Reponds poliment à "${text}". Dis que le propriétaire répondra dès qu'il sera disponible. Tu es ${BOT_NAME}.`;
@@ -538,45 +549,45 @@ async function startBot() {
         }
     });
 
-    // --- ANTIDELETE LISTENER ---
+    // --- ANTIDELETE (Update Detection) ---
     sock.ev.on("messages.update", async (updates) => {
         for (const update of updates) {
-            if (update.update.protocolMessage?.type === 0 || update.update.protocolMessage?.type === 5) {
+            const proto = update.update.message?.protocolMessage || update.update.protocolMessage;
+            if (proto?.type === 0 || proto?.type === 5) {
                 const jid = update.key.remoteJid;
                 const isGroup = jid.endsWith('@g.us');
 
-                // Allow if it's a private chat OR if the group has antidelete enabled
                 if (isGroup && !antideleteGroups.has(jid)) continue;
 
-                const archived = antideletePool.get(update.key.id);
+                const targetId = proto.key?.id || update.key.id;
+                const archived = antideletePool.get(targetId);
                 if (!archived) continue;
 
-                console.log(`[Antidelete] Detected delete in ${jid}. Recovering ID ${update.key.id}`);
-
+                console.log(`[Antidelete] Detected delete (update) in ${jid}. Recovering ID ${targetId}`);
                 const sender = archived.key.participant || archived.key.remoteJid;
-                const senderText = `🗑️ *Message Supprimé détecté*\n👤 *Auteur:* @${sender.split('@')[0]}\n💬 *Groupe:* ${jid.split('@')[0]}`;
+                const senderText = `🗑️ *Message Supprimé détecté*\n👤 *Auteur:* @${sender.split('@')[0]}\n💬 *Source:* ${jid.split('@')[0]}`;
+                const masterJid = (sock.user?.id || OWNER_PN + "@s.whatsapp.net").split(':')[0] + "@s.whatsapp.net";
 
-                const masterJid = sock.user.id.split(':')[0] + "@s.whatsapp.net";
-
-                // Forward to YOU (Master)
                 await sock.sendMessage(masterJid, { text: senderText, mentions: [sender] });
                 await sock.sendMessage(masterJid, { forward: archived });
             }
         }
     });
-
     const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 
     // Reaction Handler for ViewOnce Extraction (Incognito)
     sock.ev.on("messages.reaction", async (reactions) => {
+        const cleanJid = (jid) => jid ? jid.split(':')[0].split('@')[0] : "";
+
         for (const reaction of reactions) {
             const { key } = reaction;
 
             // SECURITY: Only extraction if the reactor is the Owner
             const reactor = reaction.key.fromMe ? sock.user.id : (reaction.key.participant || reaction.key.remoteJid);
-            const isOwnerReact = reaction.key.fromMe || isOwner(reactor);
+            const reactorClean = cleanJid(reactor);
+            const isOwner = reaction.key.fromMe || reactorClean === OWNER_PN || OWNER_LIDS.includes(reactorClean);
 
-            if (!isOwnerReact) continue;
+            if (!isOwner) continue;
 
             const archivedMsg = messageCache.get(key.id);
             if (archivedMsg) {
@@ -617,7 +628,7 @@ async function startBot() {
     sock.ev.on('call', async (callEvents) => {
         for (const call of callEvents) {
             // Check for missed, rejected or timeout statuses
-            if (call.status === 'timeout' || call.status === 'rejected' || call.status === 'missed') {
+            if (call.status === 'timeout' || call.status === 'reject' || call.status === 'terminate') {
                 const callerId = call.from;
                 console.log(chalk.yellow(`[Call] Missed/Rejected call from ${callerId}`));
 
@@ -658,7 +669,7 @@ async function startBot() {
                     });
 
                     // 4. Notify Owner
-                    const ownerJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+                    const ownerJid = (sock.user?.id || OWNER_PN + "@s.whatsapp.net").split(':')[0] + "@s.whatsapp.net";
                     await sock.sendMessage(ownerJid, {
                         text: `📞 *Appel Manqué (Auto-Reply)*\n━━━━━━━━━━━━━━\n👤 *De:* @${callerId.split('@')[0]}\n📝 *Assistant:* "${aiText.trim()}"`,
                         mentions: [callerId]
