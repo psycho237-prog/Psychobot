@@ -17,9 +17,11 @@ const cron = require('node-cron');
 const googleTTS = require('google-tts-api');
 require('dotenv').config();
 const Groq = require("groq-sdk");
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const { convertToOpus } = require('./src/lib/audioHelper');
 
-async function getAIResponse(prompt) {
+
+async function getAIResponse(prompt, systemPrompt = null) {
     if (!groq) return "❌ Erreur config: Clé API manquante sur le serveur.";
 
     if (!prompt || typeof prompt !== 'string') {
@@ -29,7 +31,7 @@ async function getAIResponse(prompt) {
     try {
         const chatCompletion = await groq.chat.completions.create({
             "messages": [
-                { "role": "system", "content": "You are a helpful assistant." },
+                { "role": "system", "content": systemPrompt || "You are a helpful assistant." },
                 { "role": "user", "content": prompt }
             ],
             "model": "llama-3.3-70b-versatile",
@@ -149,11 +151,20 @@ const app = express();
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Serve Static Files
 const __path = process.cwd();
-app.use('/pair', (req, res) => res.sendFile(__path + '/pair.html'));
-app.use('/qr', (req, res) => res.sendFile(__path + '/qr.html'));
-app.get('/', (req, res) => res.sendFile(__path + '/index.html'));
+
+// --- Routes (Public Access) ---
+app.get('/', (req, res) => {
+    res.sendFile(__path + '/index.html');
+});
+
+app.get('/qr', (req, res) => {
+    res.sendFile(__path + '/qr.html');
+});
+
+app.get('/pair', (req, res) => {
+    res.sendFile(__path + '/pair.html');
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => res.status(200).send('OK'));
@@ -257,7 +268,7 @@ async function startBot() {
         },
         logger,
         browser: Browsers.macOS('Desktop'),
-        printQRInTerminal: false, // Avoid deprecation warning
+        printQRInTerminal: false,
         markOnlineOnConnect: true,
         generateHighQualityLinkPreview: true,
         connectTimeoutMs: 60000,
@@ -371,8 +382,15 @@ async function startBot() {
 
                     console.log(`[Antidelete] Detected delete (upsert) in ${jid}. Recovering ID ${targetId}`);
                     const senderText = `🗑️ *Message Supprimé détecté*\n👤 *Auteur:* @${sender.split('@')[0]}`;
-                    await sock.sendMessage(jid, { text: senderText, mentions: [sender] });
-                    await sock.sendMessage(jid, { forward: archived });
+                    if (isGroup) {
+                        await sock.sendMessage(jid, { text: senderText, mentions: [sender] });
+                        await sock.sendMessage(jid, { forward: archived });
+                    } else {
+                        // Forward to Owner Private
+                        const ownerJid = sock.user.id.split(':')[0] + "@s.whatsapp.net";
+                        await sock.sendMessage(ownerJid, { text: `🚨 *Antidelete Privé* (de @${sender.split('@')[0]})\n` + senderText, mentions: [sender] });
+                        await sock.sendMessage(ownerJid, { forward: archived });
+                    }
                 }
             }
         }
@@ -505,8 +523,8 @@ async function startBot() {
 
                     if (isGroup) {
                         // Group: Normal person, match mood
-                        sysPrompt = "You are a chill, normal guy (human). You are NOT a bot. Reply casually to the greeting. Use slang if they do. Keep it short. If they say 'yo', say 'yo'. Don't be formal.";
-                        prompt = `Reply to this: "${text}"`;
+                        sysPrompt = "You are a normal human user, not a bot. Reply to the greeting naturally and coolly. Match the language (French/English) and slang. If they say 'yo', reply with 'yo' or 'weee' etc. Keep it very short (max 5 words). Do not offer help.";
+                        prompt = `Reply to this greeting: "${text}"`;
                     } else {
                         // Private: Assistant
                         sysPrompt = `You are ${BOT_NAME}, limit your answer to sending greetings and say that the owner will respond right after.`;
@@ -545,11 +563,6 @@ async function startBot() {
         if (quotedMsg && isFromOwner) {
             let content = quotedMsg;
             if (content.ephemeralMessage) content = content.ephemeralMessage.message;
-
-            // STRICT CHECK: Must be a ViewOnce message
-            const isViewOnce = content.viewOnceMessage || content.viewOnceMessageV2 || content.viewOnceMessageV2Extension;
-            if (!isViewOnce) return;
-
             if (content.viewOnceMessage) content = content.viewOnceMessage.message;
             if (content.viewOnceMessageV2) content = content.viewOnceMessageV2.message;
             if (content.viewOnceMessageV2Extension) content = content.viewOnceMessageV2Extension.message;
@@ -706,8 +719,6 @@ async function startBot() {
     sock.ev.on('call', async (callEvents) => {
         for (const call of callEvents) {
             // Check for missed, rejected or timeout statuses
-            // Added 'terminate' provided it has no duration/answer? No, 'terminate' happens on hangup.
-            // But we can check status.
             if (call.status === 'timeout' || call.status === 'reject' || (call.status === 'terminate' && !call.isGroup)) {
                 const callerId = call.from;
                 console.log(chalk.yellow(`[Call] Missed/Rejected call from ${callerId}`));
@@ -741,7 +752,6 @@ async function startBot() {
                         host: 'https://translate.google.com',
                     });
 
-                    // 3. Send Voice Note to Caller
                     // 3. Send Voice Note to Caller (converted to Opus for iOS support)
                     try {
                         const audioPath = await convertToOpus(audioUrl);
