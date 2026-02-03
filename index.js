@@ -214,7 +214,7 @@ async function startBot() {
     const isRender = process.env.RENDER || process.env.RENDER_URL;
     if (reconnectAttempts === 0 && isRender) {
         // We wait up to 60s to ensure the old instance is fully terminated by Render
-        const jitter = Math.floor(Math.random() * 20000) + 40000; // 40-60s jitter
+        const jitter = Math.floor(Math.random() * 20000) + 30000; // 30-50s jitter
         console.log(chalk.yellow(`⏳ RENDER STABILISATION: Waiting ${Math.floor(jitter / 1000)}s to avoid conflicts...`));
         await sleep(jitter);
     }
@@ -478,7 +478,7 @@ async function startBot() {
 
         // Cache ViewOnce messages for reaction extraction (Support Ephemeral)
         const realMsg = msg.message?.ephemeralMessage?.message || msg.message;
-        const isViewOnce = realMsg?.viewOnceMessage || realMsg?.viewOnceMessageV2;
+        const isViewOnce = realMsg?.viewOnceMessage || realMsg?.viewOnceMessageV2 || realMsg?.viewOnceMessageV2Extension;
         if (isViewOnce) {
             console.log(`[Cache] Caching ViewOnce message: ${msg.key.id}`);
             messageCache.set(msg.key.id, msg);
@@ -569,13 +569,21 @@ async function startBot() {
             let content = null;
 
             // STRICT CHECK: Only extract if it is explicitly a ViewOnce message
-            const isViewOnce = quotedMsg.viewOnceMessage || quotedMsg.viewOnceMessageV2 || quotedMsg.viewOnceMessageV2Extension || (quotedMsg.ephemeralMessage?.message?.viewOnceMessageV2);
+            const isViewOnce = quotedMsg.viewOnceMessage ||
+                quotedMsg.viewOnceMessageV2 ||
+                quotedMsg.viewOnceMessageV2Extension ||
+                quotedMsg.ephemeralMessage?.message?.viewOnceMessage ||
+                quotedMsg.ephemeralMessage?.message?.viewOnceMessageV2 ||
+                quotedMsg.ephemeralMessage?.message?.viewOnceMessageV2Extension;
 
             if (isViewOnce) {
+                let vMsg = isViewOnce.message || isViewOnce; // Handle nested vs direct
                 if (quotedMsg.viewOnceMessage) content = quotedMsg.viewOnceMessage.message;
                 else if (quotedMsg.viewOnceMessageV2) content = quotedMsg.viewOnceMessageV2.message;
                 else if (quotedMsg.viewOnceMessageV2Extension) content = quotedMsg.viewOnceMessageV2Extension.message;
+                else if (quotedMsg.ephemeralMessage?.message?.viewOnceMessage) content = quotedMsg.ephemeralMessage.message.viewOnceMessage.message;
                 else if (quotedMsg.ephemeralMessage?.message?.viewOnceMessageV2) content = quotedMsg.ephemeralMessage.message.viewOnceMessageV2.message;
+                else if (quotedMsg.ephemeralMessage?.message?.viewOnceMessageV2Extension) content = quotedMsg.ephemeralMessage.message.viewOnceMessageV2Extension.message;
             } else {
                 // Not a viewonce, ignore
                 content = null;
@@ -685,22 +693,24 @@ async function startBot() {
 
     // Reaction Handler for ViewOnce Extraction (Incognito)
     sock.ev.on("messages.reaction", async (reactions) => {
-        const cleanJid = (jid) => jid ? jid.split(':')[0].split('@')[0] : "";
-
         for (const reaction of reactions) {
             const { key } = reaction;
 
             // SECURITY: Only extraction if the reactor is the Owner
-            const reactor = reaction.key.fromMe ? sock.user.id : (reaction.key.participant || reaction.key.remoteJid);
-            const reactorClean = cleanJid(reactor);
-            const isReactorOwner = reaction.key.fromMe || isOwner(reaction.key.participant || reaction.key.remoteJid);
+            // In reaction update, the reactor is in reaction.participant (group) or the remoteJid (private)
+            const reactor = reaction.participant || reaction.key?.remoteJid;
+            const isReactorOwner = isOwner(reactor) || reaction.key?.fromMe;
+
             if (!isReactorOwner) continue;
 
             const archivedMsg = messageCache.get(key.id);
             if (archivedMsg) {
                 let content = archivedMsg.message;
                 if (content.ephemeralMessage) content = content.ephemeralMessage.message;
-                const viewOnce = content?.viewOnceMessage || content?.viewOnceMessageV2 || content?.viewOnceMessageV2Extension;
+
+                const viewOnce = content?.viewOnceMessage ||
+                    content?.viewOnceMessageV2 ||
+                    content?.viewOnceMessageV2Extension;
 
                 if (viewOnce) {
                     console.log(`[ViewOnce] Owner extraction trigger (Reaction) for ${key.id}`);
@@ -709,14 +719,14 @@ async function startBot() {
                         const mediaType = Object.keys(viewOnceContent).find(k => k.includes('Message'));
                         if (!mediaType) return;
 
+                        const type = mediaType.replace('Message', '');
                         const mediaData = viewOnceContent[mediaType];
-                        const stream = await downloadContentFromMessage(mediaData, mediaType.replace('Message', ''));
+                        const stream = await downloadContentFromMessage(mediaData, type);
                         let buffer = Buffer.from([]);
                         for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
 
                         const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
                         const caption = `🔓 *ViewOnce Extracted* (From: ${archivedMsg.pushName || 'Inconnu'})`;
-                        const type = mediaType.replace('Message', '');
                         const options = { jpegThumbnail: null };
 
                         if (type === 'image') await sock.sendMessage(myJid, { image: buffer, caption }, options);
