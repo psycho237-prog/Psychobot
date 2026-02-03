@@ -210,11 +210,12 @@ async function startBot() {
     header();
     broadcast({ type: 'status', message: 'Starting Bot...' });
 
-    // RENDER SETTLING DELAY
+    // RENDER SETTLING DELAY (Crucial to avoid session conflicts during deployment handover)
     const isRender = process.env.RENDER || process.env.RENDER_URL;
     if (reconnectAttempts === 0 && isRender) {
-        const jitter = Math.floor(Math.random() * 5000); // 5s jitter sufficient
-        console.log(chalk.yellow(`⏳ STABILISATION (${jitter}ms jitter)...`));
+        // We wait up to 60s to ensure the old instance is fully terminated by Render
+        const jitter = Math.floor(Math.random() * 20000) + 40000; // 40-60s jitter
+        console.log(chalk.yellow(`⏳ RENDER STABILISATION: Waiting ${Math.floor(jitter / 1000)}s to avoid conflicts...`));
         await sleep(jitter);
     }
 
@@ -359,6 +360,9 @@ async function startBot() {
 
             const msgText = `*✅ 𝗦𝗲𝘀𝘀𝗶𝗼𝗻 𝗖𝗼𝗻𝗻𝗲𝗰𝘁𝗲𝗱!* \n\n🤖 *Bot:* ${BOT_NAME}\n📱 *User:* ${user}\n🔋 *Mode:* Core V2\n⏰ *Time:* ${new Date().toLocaleTimeString()}`;
             await sock.sendMessage(sock.user.id, { text: msgText });
+            
+            // Critical: Force an immediate sync on first successful connection to ensure SESSION_DATA is populated on Render
+            await syncSessionToRender();
         }
     });
 
