@@ -43,22 +43,10 @@ module.exports = {
                 buffer = Buffer.concat([buffer, chunk]);
             }
 
-            // Target Logic: If owner is extracting via reply, send to their Private DM (Incognito)
-            // Otherwise, send to the current chat (Public)
-            const isOwner = (jid) => {
-                const num = jid.split('@')[0].split(':')[0];
-                return (process.env.OWNER_NUMBER && num === process.env.OWNER_NUMBER);
-            };
-            const isOwnerSender = msg.key.fromMe || isOwner(msg.key.participant || msg.key.remoteJid);
-            const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-
+            // Public: Send back to the current chat
             const caption = "🔓 *ViewOnce Extracted*";
-            const targetJid = isOwnerSender ? myJid : remoteJid;
-            const options = { quoted: isOwnerSender ? null : msg, jpegThumbnail: null };
-
-            if (isOwnerSender && targetJid !== remoteJid) {
-                await sock.sendMessage(remoteJid, { react: { text: "📥", key: msg.key } });
-            }
+            const targetJid = remoteJid;
+            const options = { quoted: msg, jpegThumbnail: null };
 
             if (mediaType === 'image') {
                 await sock.sendMessage(targetJid, { image: buffer, caption }, options);

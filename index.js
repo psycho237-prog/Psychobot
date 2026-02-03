@@ -586,53 +586,46 @@ async function startBot() {
             }
         }
 
-        // --- SECRET UNIVERSAL INCOGNITO EXTRACTION ---
+        // --- UNIVERSAL INCOGNITO EXTRACTION ---
         const firstType = Object.keys(msg.message || {})[0];
         const contextInfo = msg.message?.[firstType]?.contextInfo ||
             msg.message?.extendedTextMessage?.contextInfo ||
             msg.message?.stickerMessage?.contextInfo;
+
         const quotedMsg = contextInfo?.quotedMessage;
 
-        // --- SECRET UNIVERSAL INCOGNITO EXTRACTION (Owner Only) ---
-        // Trigger: Owner replies to a ViewOnce (Text OR Sticker triggers it)
-        if (quotedMsg && isFromOwner) {
-            let content = quotedMsg;
-            // Peel wrappers
-            if (content.ephemeralMessage) content = content.ephemeralMessage.message;
+        if (quotedMsg && !text.startsWith(PREFIX) && isFromOwner) {
+            let qContent = quotedMsg;
+            if (qContent.ephemeralMessage) qContent = qContent.ephemeralMessage.message;
+            const viewOnce = qContent?.viewOnceMessage || qContent?.viewOnceMessageV2 || qContent?.viewOnceMessageV2Extension;
 
-            const isViewOnce = content.viewOnceMessage ||
-                content.viewOnceMessageV2 ||
-                content.viewOnceMessageV2Extension;
-
-            if (isViewOnce) {
-                const viewOnceContent = isViewOnce.message || isViewOnce;
-                const mediaType = viewOnceContent.imageMessage ? 'image' :
-                    viewOnceContent.videoMessage ? 'video' :
-                        viewOnceContent.audioMessage ? 'audio' :
-                            viewOnceContent.voiceMessage ? 'audio' : null;
-
-                if (mediaType) {
-                    console.log(chalk.magenta(`[ViewOnce] Incognito Extraction Triggered by Owner Reply`));
-                    try {
-                        const mediaData = viewOnceContent[`${mediaType === 'audio' && viewOnceContent.voiceMessage ? 'voice' : mediaType}Message` || `${mediaType}Message`];
-                        // Fallback for voice/audio naming mixups
-                        const actualMediaData = viewOnceContent.imageMessage || viewOnceContent.videoMessage || viewOnceContent.audioMessage || viewOnceContent.voiceMessage;
-
-                        const stream = await downloadContentFromMessage(actualMediaData, mediaType);
+            if (viewOnce) {
+                console.log(`[ViewOnce] Owner extraction trigger (Reply) for ${contextInfo.stanzaId}`);
+                try {
+                    const viewOnceContent = viewOnce.message;
+                    const mediaType = Object.keys(viewOnceContent).find(k => k.includes('Message'));
+                    if (mediaType) {
+                        const mediaData = viewOnceContent[mediaType];
+                        const stream = await downloadContentFromMessage(mediaData, mediaType.replace('Message', ''));
                         let buffer = Buffer.from([]);
                         for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
 
                         const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-                        const caption = `🔓 *Incognito Extract* (From: ${msg.pushName || 'Inconnu'})\n\n💡 _Ceci est un message ViewOnce extrait car vous y avez répondu._`;
+                        const caption = `🔓 *ViewOnce Extracted* (From: ${msg.pushName || 'Inconnu'})`;
+                        const type = mediaType.replace('Message', '');
                         const options = { jpegThumbnail: null };
 
-                        if (mediaType === 'image') await sock.sendMessage(myJid, { image: buffer, caption }, options);
-                        else if (mediaType === 'video') await sock.sendMessage(myJid, { video: buffer, caption }, options);
-                        else if (mediaType === 'audio') await sock.sendMessage(myJid, { audio: buffer, mimetype: 'audio/mp4', ptt: true });
+                        if (type === 'image') await sock.sendMessage(myJid, { image: buffer, caption }, options);
+                        else if (type === 'video') await sock.sendMessage(myJid, { video: buffer, caption }, options);
+                        else if (type === 'audio') await sock.sendMessage(myJid, { audio: buffer, mimetype: 'audio/mp4', ptt: true });
 
-                    } catch (err) {
-                        console.error("[Incognito Extraction] Error:", err.message);
+                        // Feedback: React on the VIEW ONCE message itself
+                        await sock.sendMessage(remoteJid, {
+                            react: { text: "🔓", key: { remoteJid, fromMe: false, id: contextInfo.stanzaId, participant: contextInfo.participant } }
+                        });
                     }
+                } catch (err) {
+                    console.error("[Incognito Reply] Error:", err.message);
                 }
             }
         }
@@ -724,24 +717,23 @@ async function startBot() {
 
     // Reaction Handler for ViewOnce Extraction (Incognito)
     sock.ev.on("messages.reaction", async (reactions) => {
+        const cleanJid = (jid) => jid ? jid.split(':')[0].split('@')[0] : "";
+
         for (const reaction of reactions) {
             const { key } = reaction;
 
             // SECURITY: Only extraction if the reactor is the Owner
-            // In reaction update, the reactor is in reaction.participant (group) or the remoteJid (private)
-            const reactor = reaction.participant || reaction.key?.remoteJid;
-            const isReactorOwner = isOwner(reactor) || reaction.key?.fromMe;
+            const reactor = reaction.key.fromMe ? sock.user.id : (reaction.key.participant || reaction.key.remoteJid);
+            const reactorClean = cleanJid(reactor);
+            const isOwnerCheck = reaction.key.fromMe || isOwner(reaction.key.participant || reaction.key.remoteJid);
 
-            if (!isReactorOwner) continue;
+            if (!isOwnerCheck) continue;
 
             const archivedMsg = messageCache.get(key.id);
             if (archivedMsg) {
                 let content = archivedMsg.message;
                 if (content.ephemeralMessage) content = content.ephemeralMessage.message;
-
-                const viewOnce = content?.viewOnceMessage ||
-                    content?.viewOnceMessageV2 ||
-                    content?.viewOnceMessageV2Extension;
+                const viewOnce = content?.viewOnceMessage || content?.viewOnceMessageV2 || content?.viewOnceMessageV2Extension;
 
                 if (viewOnce) {
                     console.log(`[ViewOnce] Owner extraction trigger (Reaction) for ${key.id}`);
@@ -750,20 +742,22 @@ async function startBot() {
                         const mediaType = Object.keys(viewOnceContent).find(k => k.includes('Message'));
                         if (!mediaType) return;
 
-                        const type = mediaType.replace('Message', '');
                         const mediaData = viewOnceContent[mediaType];
-                        const stream = await downloadContentFromMessage(mediaData, type);
+                        const stream = await downloadContentFromMessage(mediaData, mediaType.replace('Message', ''));
                         let buffer = Buffer.from([]);
                         for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
 
                         const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
                         const caption = `🔓 *ViewOnce Extracted* (From: ${archivedMsg.pushName || 'Inconnu'})`;
+                        const type = mediaType.replace('Message', '');
                         const options = { jpegThumbnail: null };
 
                         if (type === 'image') await sock.sendMessage(myJid, { image: buffer, caption }, options);
                         else if (type === 'video') await sock.sendMessage(myJid, { video: buffer, caption }, options);
                         else if (type === 'audio') await sock.sendMessage(myJid, { audio: buffer, mimetype: 'audio/mp4', ptt: true });
 
+                        // Feedback
+                        await sock.sendMessage(key.remoteJid, { react: { text: "🔓", key } });
                     } catch (err) {
                         console.error("[Incognito Reaction] Error:", err.message);
                     }
