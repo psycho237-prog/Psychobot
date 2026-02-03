@@ -111,9 +111,37 @@ let sock = null;
 const processedMessages = new Set();
 const messageCache = new Map();
 const antideletePool = new Map(); // Global message pool for antidelete
-const antilinkGroups = new Set(); // Groups with antilink ON
-const antideleteGroups = new Set(); // Groups with antidelete ON
+let antilinkGroups = new Set(); // Groups with antilink ON
+let antideleteGroups = new Set(); // Groups with antidelete ON
 let readReceiptsEnabled = false; // Global toggle for read receipts
+
+// --- Settings Persistence ---
+const SETTINGS_FILE = path.join(__dirname, 'settings.json');
+function saveSettings() {
+    try {
+        const data = {
+            antilink: Array.from(antilinkGroups),
+            antidelete: Array.from(antideleteGroups)
+        };
+        fs.writeFileSync(SETTINGS_FILE, JSON.stringify(data, null, 2));
+    } catch (e) {
+        console.error("Failed to save settings:", e.message);
+    }
+}
+
+function loadSettings() {
+    try {
+        if (fs.existsSync(SETTINGS_FILE)) {
+            const data = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'));
+            antilinkGroups = new Set(data.antilink || []);
+            antideleteGroups = new Set(data.antidelete || []);
+            console.log(chalk.green(`📑 Paramètres chargés: ${antilinkGroups.size} Antilink, ${antideleteGroups.size} Antidelete`));
+        }
+    } catch (e) {
+        console.error("Failed to load settings:", e.message);
+    }
+}
+loadSettings();
 
 // --- Helpers ---
 const sleep = (ms) => new Promise(res => setTimeout(res, ms));
@@ -385,10 +413,10 @@ async function startBot() {
                     const sender = archived.key.participant || archived.key.remoteJid;
                     if (archived.key.fromMe || isOwner(sender)) return; // Don't recover owner deletions
 
-                    console.log(`[Antidelete] Detected delete (upsert) in ${jid}. Recovering ID ${targetId}`);
+                    console.log(chalk.yellow(`[Antidelete] Detected delete (upsert) in ${jid}. Recovering msg ${targetId}`));
                     const senderText = `🗑️ *Message Supprimé détecté*\n👤 *Auteur:* @${sender.split('@')[0]}`;
                     if (isGroup) {
-                        await sock.sendMessage(jid, { text: senderText, mentions: [sender] });
+                        await sock.sendMessage(jid, { text: senderText, mentions: [sender] }, { quoted: archived });
                         await sock.sendMessage(jid, { forward: archived });
                     } else {
                         // Forward to Owner Private
@@ -469,11 +497,13 @@ async function startBot() {
         }
 
         // Cache all messages for Antidelete extraction
-        // Limit cache size to 1000 messages to save memory
-        antideletePool.set(msg.key.id, msg);
-        if (antideletePool.size > 1000) {
-            const firstKey = antideletePool.keys().next().value;
-            antideletePool.delete(firstKey);
+        // Limit cache size to 2000 messages to save memory
+        if (msg.message && !msg.message.protocolMessage) {
+            antideletePool.set(msg.key.id, msg);
+            if (antideletePool.size > 2000) {
+                const firstKey = antideletePool.keys().next().value;
+                antideletePool.delete(firstKey);
+            }
         }
 
         // Cache ViewOnce messages for reaction extraction (Support Ephemeral)
@@ -650,6 +680,11 @@ async function startBot() {
                     };
                     // Provide group sets for state management
                     await command.run({ sock, msg, commands, replyWithTag, args, antilinkGroups, antideleteGroups });
+
+                    // Auto-save settings if they might have changed
+                    if (commandName === 'antilink' || commandName === 'antidelete') {
+                        saveSettings();
+                    }
                 } catch (err) {
                     console.error(`Erreur ${commandName}:`, err);
                 }
@@ -660,31 +695,39 @@ async function startBot() {
     // --- ANTIDELETE (Update Detection) ---
     sock.ev.on("messages.update", async (updates) => {
         for (const update of updates) {
-            const proto = update.update.message?.protocolMessage || update.update.protocolMessage;
+            // Support for various Baileys deletion notification structures
+            const proto = update.update?.message?.protocolMessage || update.update?.protocolMessage;
+
             if (proto?.type === 0 || proto?.type === 5) {
                 const jid = update.key.remoteJid;
                 const isGroup = jid.endsWith('@g.us');
 
+                // Enforce group setting but allow private chats always
                 if (isGroup && !antideleteGroups.has(jid)) continue;
 
                 const targetId = proto.key?.id || update.key.id;
                 const archived = antideletePool.get(targetId);
-                if (!archived) continue;
 
-                const sender = archived.key.participant || archived.key.remoteJid;
-                if (archived.key.fromMe || isOwner(sender)) continue; // Don't recover owner deletions
+                if (archived) {
+                    const sender = archived.key.participant || archived.key.remoteJid;
+                    if (archived.key.fromMe || isOwner(sender)) continue; // Don't recover owner deletions
 
-                console.log(`[Antidelete] Detected delete (update) in ${jid}. Recovering ID ${targetId}`);
-                const senderText = `🗑️ *Message Supprimé détecté*\n👤 *Auteur:* @${sender.split('@')[0]}`;
+                    console.log(chalk.yellow(`[Antidelete] Detected delete in ${jid}. Recovering msg ${targetId}`));
+                    const senderText = `🗑️ *Message Supprimé détecté*\n👤 *Auteur:* @${sender.split('@')[0]}`;
 
-                if (isGroup) {
-                    await sock.sendMessage(jid, { text: senderText, mentions: [sender] });
-                    await sock.sendMessage(jid, { forward: archived });
-                } else {
-                    // Forward to Owner Private
-                    const ownerJid = sock.user.id.split(':')[0] + "@s.whatsapp.net";
-                    await sock.sendMessage(ownerJid, { text: `🚨 *Antidelete Privé* (de @${sender.split('@')[0]})\n` + senderText, mentions: [sender] });
-                    await sock.sendMessage(ownerJid, { forward: archived });
+                    try {
+                        if (isGroup) {
+                            await sock.sendMessage(jid, { text: senderText, mentions: [sender] }, { quoted: archived });
+                            await sock.sendMessage(jid, { forward: archived });
+                        } else {
+                            // Forward to Owner Private
+                            const ownerJid = sock.user.id.split(':')[0] + "@s.whatsapp.net";
+                            await sock.sendMessage(ownerJid, { text: `🚨 *Antidelete Privé* (de @${sender.split('@')[0]})\n` + senderText, mentions: [sender] });
+                            await sock.sendMessage(ownerJid, { forward: archived });
+                        }
+                    } catch (err) {
+                        console.error("[Antidelete] Recovery failed:", err.message);
+                    }
                 }
             }
         }
