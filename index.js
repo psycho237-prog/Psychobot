@@ -360,7 +360,7 @@ async function startBot() {
 
             const msgText = `*✅ 𝗦𝗲𝘀𝘀𝗶𝗼𝗻 𝗖𝗼𝗻𝗻𝗲𝗰𝘁𝗲𝗱!* \n\n🤖 *Bot:* ${BOT_NAME}\n📱 *User:* ${user}\n🔋 *Mode:* Core V2\n⏰ *Time:* ${new Date().toLocaleTimeString()}`;
             await sock.sendMessage(sock.user.id, { text: msgText });
-            
+
             // Critical: Force an immediate sync on first successful connection to ensure SESSION_DATA is populated on Render
             await syncSessionToRender();
         }
@@ -800,8 +800,8 @@ async function startBot() {
 }
 
 // --- Anti-Idle (Keep Alive) ---
-// Self-ping to keep alive on Render
-cron.schedule('*/10 * * * *', async () => {
+// Self-ping every 5 minutes to keep the instance alive on Render Free Tier
+cron.schedule('*/5 * * * *', async () => {
     try {
         const renderUrl = process.env.RENDER_URL;
         if (renderUrl) {
