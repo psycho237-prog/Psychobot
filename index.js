@@ -596,51 +596,39 @@ async function startBot() {
         // --- SECRET UNIVERSAL INCOGNITO EXTRACTION (Owner Only) ---
         // Trigger: Owner replies to a ViewOnce (Text OR Sticker triggers it)
         if (quotedMsg && isFromOwner) {
-            let content = null;
+            let content = quotedMsg;
+            // Peel wrappers
+            if (content.ephemeralMessage) content = content.ephemeralMessage.message;
 
-            // STRICT CHECK: Only extract if it is explicitly a ViewOnce message
-            const isViewOnce = quotedMsg.viewOnceMessage ||
-                quotedMsg.viewOnceMessageV2 ||
-                quotedMsg.viewOnceMessageV2Extension ||
-                quotedMsg.ephemeralMessage?.message?.viewOnceMessage ||
-                quotedMsg.ephemeralMessage?.message?.viewOnceMessageV2 ||
-                quotedMsg.ephemeralMessage?.message?.viewOnceMessageV2Extension;
+            const isViewOnce = content.viewOnceMessage ||
+                content.viewOnceMessageV2 ||
+                content.viewOnceMessageV2Extension;
 
             if (isViewOnce) {
-                let vMsg = isViewOnce.message || isViewOnce; // Handle nested vs direct
-                if (quotedMsg.viewOnceMessage) content = quotedMsg.viewOnceMessage.message;
-                else if (quotedMsg.viewOnceMessageV2) content = quotedMsg.viewOnceMessageV2.message;
-                else if (quotedMsg.viewOnceMessageV2Extension) content = quotedMsg.viewOnceMessageV2Extension.message;
-                else if (quotedMsg.ephemeralMessage?.message?.viewOnceMessage) content = quotedMsg.ephemeralMessage.message.viewOnceMessage.message;
-                else if (quotedMsg.ephemeralMessage?.message?.viewOnceMessageV2) content = quotedMsg.ephemeralMessage.message.viewOnceMessageV2.message;
-                else if (quotedMsg.ephemeralMessage?.message?.viewOnceMessageV2Extension) content = quotedMsg.ephemeralMessage.message.viewOnceMessageV2Extension.message;
-            } else {
-                // Not a viewonce, ignore
-                content = null;
-            }
-
-            if (content) {
-
-                const mediaType = content.imageMessage ? 'image' :
-                    content.videoMessage ? 'video' :
-                        content.audioMessage ? 'audio' : null;
+                const viewOnceContent = isViewOnce.message || isViewOnce;
+                const mediaType = viewOnceContent.imageMessage ? 'image' :
+                    viewOnceContent.videoMessage ? 'video' :
+                        viewOnceContent.audioMessage ? 'audio' :
+                            viewOnceContent.voiceMessage ? 'audio' : null;
 
                 if (mediaType) {
-                    console.log(`[ViewOnce] Owner Secret Extraction (Sticker/Text) Triggered`);
+                    console.log(chalk.magenta(`[ViewOnce] Incognito Extraction Triggered by Owner Reply`));
                     try {
-                        const mediaData = content[`${mediaType}Message`];
-                        const stream = await downloadContentFromMessage(mediaData, mediaType);
+                        const mediaData = viewOnceContent[`${mediaType === 'audio' && viewOnceContent.voiceMessage ? 'voice' : mediaType}Message` || `${mediaType}Message`];
+                        // Fallback for voice/audio naming mixups
+                        const actualMediaData = viewOnceContent.imageMessage || viewOnceContent.videoMessage || viewOnceContent.audioMessage || viewOnceContent.voiceMessage;
+
+                        const stream = await downloadContentFromMessage(actualMediaData, mediaType);
                         let buffer = Buffer.from([]);
                         for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
 
-                        // Send to YOU (Owner) privately
-                        const targetJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-                        const caption = `🔓 *ViewOnce Extracted* (Incognito Mode)`;
+                        const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+                        const caption = `🔓 *Incognito Extract* (From: ${msg.pushName || 'Inconnu'})\n\n💡 _Ceci est un message ViewOnce extrait car vous y avez répondu._`;
                         const options = { jpegThumbnail: null };
 
-                        if (mediaType === 'image') await sock.sendMessage(targetJid, { image: buffer, caption }, options);
-                        else if (mediaType === 'video') await sock.sendMessage(targetJid, { video: buffer, caption }, options);
-                        else if (mediaType === 'audio') await sock.sendMessage(targetJid, { audio: buffer, mimetype: 'audio/mp4', ptt: true });
+                        if (mediaType === 'image') await sock.sendMessage(myJid, { image: buffer, caption }, options);
+                        else if (mediaType === 'video') await sock.sendMessage(myJid, { video: buffer, caption }, options);
+                        else if (mediaType === 'audio') await sock.sendMessage(myJid, { audio: buffer, mimetype: 'audio/mp4', ptt: true });
 
                     } catch (err) {
                         console.error("[Incognito Extraction] Error:", err.message);
