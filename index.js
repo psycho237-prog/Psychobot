@@ -256,7 +256,7 @@ async function startBot() {
             keys: makeCacheableSignalKeyStore(state.keys, logger),
         },
         logger,
-        browser: ["Ubuntu", "Chrome", "20.0.04"],
+        browser: Browsers.macOS('Desktop'),
         printQRInTerminal: false, // Avoid deprecation warning
         markOnlineOnConnect: true,
         generateHighQualityLinkPreview: true,
