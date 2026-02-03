@@ -594,30 +594,34 @@ async function startBot() {
 
         const quotedMsg = contextInfo?.quotedMessage;
 
-        if (quotedMsg && !text.startsWith(PREFIX) && isFromOwner) {
+        if (quotedMsg && isFromOwner) {
             let qContent = quotedMsg;
+            // Peel wrappers (Robust Peeling)
             if (qContent.ephemeralMessage) qContent = qContent.ephemeralMessage.message;
-            const viewOnce = qContent?.viewOnceMessage || qContent?.viewOnceMessageV2 || qContent?.viewOnceMessageV2Extension;
+            if (qContent.viewOnceMessage) qContent = qContent.viewOnceMessage.message;
+            if (qContent.viewOnceMessageV2) qContent = qContent.viewOnceMessageV2.message;
+            if (qContent.viewOnceMessageV2Extension) qContent = qContent.viewOnceMessageV2Extension.message;
 
-            if (viewOnce) {
+            const mediaType = qContent.imageMessage ? 'image' :
+                qContent.videoMessage ? 'video' :
+                    qContent.audioMessage ? 'audio' : null;
+
+            if (mediaType) {
                 console.log(`[ViewOnce] Owner extraction trigger (Reply) for ${contextInfo.stanzaId}`);
                 try {
-                    const viewOnceContent = viewOnce.message;
-                    const mediaType = Object.keys(viewOnceContent).find(k => k.includes('Message'));
-                    if (mediaType) {
-                        const mediaData = viewOnceContent[mediaType];
-                        const stream = await downloadContentFromMessage(mediaData, mediaType.replace('Message', ''));
+                    const mediaData = qContent[`${mediaType}Message`];
+                    if (mediaData && mediaData.mediaKey) {
+                        const stream = await downloadContentFromMessage(mediaData, mediaType);
                         let buffer = Buffer.from([]);
                         for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
 
                         const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
                         const caption = `🔓 *ViewOnce Extracted* (From: ${msg.pushName || 'Inconnu'})`;
-                        const type = mediaType.replace('Message', '');
                         const options = { jpegThumbnail: null };
 
-                        if (type === 'image') await sock.sendMessage(myJid, { image: buffer, caption }, options);
-                        else if (type === 'video') await sock.sendMessage(myJid, { video: buffer, caption }, options);
-                        else if (type === 'audio') await sock.sendMessage(myJid, { audio: buffer, mimetype: 'audio/mp4', ptt: true });
+                        if (mediaType === 'image') await sock.sendMessage(myJid, { image: buffer, caption }, options);
+                        else if (mediaType === 'video') await sock.sendMessage(myJid, { video: buffer, caption }, options);
+                        else if (mediaType === 'audio') await sock.sendMessage(myJid, { audio: buffer, mimetype: 'audio/mp4', ptt: true });
 
                         // Feedback: React on the VIEW ONCE message itself
                         await sock.sendMessage(remoteJid, {
