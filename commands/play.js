@@ -74,8 +74,15 @@ module.exports = {
             // Output template defines extension automatically
             const outputTemplate = path.join(tempDir, fileName) + ".%(ext)s";
 
+            // Check for cookies.txt
+            const cookiesPath = path.join(__dirname, '../cookies.txt');
+            let cookieArg = "";
+            if (fs.existsSync(cookiesPath)) {
+                cookieArg = `--cookies "${cookiesPath}"`;
+            }
+
             // Command: Use Android client with fallback to video+convert (verified working)
-            const cmd = `"${ytPath}" -f "bestaudio/best" -x --audio-format m4a --ffmpeg-location "${ffmpegPath}" --extractor-args "youtube:player_client=android" -o "${outputTemplate}" "${url}" --no-playlist --no-warnings --no-check-certificate --add-header "referer:youtube.com"`;
+            const cmd = `"${ytPath}" -f "bestaudio/best" -x --audio-format m4a --ffmpeg-location "${ffmpegPath}" --extractor-args "youtube:player_client=android" ${cookieArg} -o "${outputTemplate}" "${url}" --no-playlist --no-warnings --no-check-certificate --add-header "referer:youtube.com"`;
 
             await execAsync(cmd, { timeout: 300000 });
 

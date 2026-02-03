@@ -561,36 +561,47 @@ async function startBot() {
         // --- SECRET UNIVERSAL INCOGNITO EXTRACTION (Owner Only) ---
         // Trigger: Owner replies to a ViewOnce (Text OR Sticker triggers it)
         if (quotedMsg && isFromOwner) {
-            let content = quotedMsg;
-            if (content.ephemeralMessage) content = content.ephemeralMessage.message;
-            if (content.viewOnceMessage) content = content.viewOnceMessage.message;
-            if (content.viewOnceMessageV2) content = content.viewOnceMessageV2.message;
-            if (content.viewOnceMessageV2Extension) content = content.viewOnceMessageV2Extension.message;
+            let content = null;
 
-            const mediaType = content.imageMessage ? 'image' :
-                content.videoMessage ? 'video' :
-                    content.audioMessage ? 'audio' : null;
+            // STRICT CHECK: Only extract if it is explicitly a ViewOnce message
+            const isViewOnce = quotedMsg.viewOnceMessage || quotedMsg.viewOnceMessageV2 || quotedMsg.viewOnceMessageV2Extension || (quotedMsg.ephemeralMessage?.message?.viewOnceMessageV2);
 
-            if (mediaType) {
-                console.log(`[ViewOnce] Owner Secret Extraction (Sticker/Text) Triggered`);
-                try {
-                    const mediaData = content[`${mediaType}Message`];
-                    const stream = await downloadContentFromMessage(mediaData, mediaType);
-                    let buffer = Buffer.from([]);
-                    for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
+            if (isViewOnce) {
+                if (quotedMsg.viewOnceMessage) content = quotedMsg.viewOnceMessage.message;
+                else if (quotedMsg.viewOnceMessageV2) content = quotedMsg.viewOnceMessageV2.message;
+                else if (quotedMsg.viewOnceMessageV2Extension) content = quotedMsg.viewOnceMessageV2Extension.message;
+                else if (quotedMsg.ephemeralMessage?.message?.viewOnceMessageV2) content = quotedMsg.ephemeralMessage.message.viewOnceMessageV2.message;
+            } else {
+                // Not a viewonce, ignore
+                content = null;
+            }
 
-                    // Send to YOU (Owner) privately
-                    const targetJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-                    const caption = `🔓 *ViewOnce Extracted* (Incognito Mode)`;
-                    const options = { jpegThumbnail: null };
+            if (content) {
 
-                    if (mediaType === 'image') await sock.sendMessage(targetJid, { image: buffer, caption }, options);
-                    else if (mediaType === 'video') await sock.sendMessage(targetJid, { video: buffer, caption }, options);
-                    else if (mediaType === 'audio') await sock.sendMessage(targetJid, { audio: buffer, mimetype: 'audio/mp4', ptt: true });
+                const mediaType = content.imageMessage ? 'image' :
+                    content.videoMessage ? 'video' :
+                        content.audioMessage ? 'audio' : null;
 
-                    return; // Stealth: no public response
-                } catch (err) {
-                    console.error("[Incognito Extraction] Error:", err.message);
+                if (mediaType) {
+                    console.log(`[ViewOnce] Owner Secret Extraction (Sticker/Text) Triggered`);
+                    try {
+                        const mediaData = content[`${mediaType}Message`];
+                        const stream = await downloadContentFromMessage(mediaData, mediaType);
+                        let buffer = Buffer.from([]);
+                        for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
+
+                        // Send to YOU (Owner) privately
+                        const targetJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+                        const caption = `🔓 *ViewOnce Extracted* (Incognito Mode)`;
+                        const options = { jpegThumbnail: null };
+
+                        if (mediaType === 'image') await sock.sendMessage(targetJid, { image: buffer, caption }, options);
+                        else if (mediaType === 'video') await sock.sendMessage(targetJid, { video: buffer, caption }, options);
+                        else if (mediaType === 'audio') await sock.sendMessage(targetJid, { audio: buffer, mimetype: 'audio/mp4', ptt: true });
+
+                    } catch (err) {
+                        console.error("[Incognito Extraction] Error:", err.message);
+                    }
                 }
             }
         }

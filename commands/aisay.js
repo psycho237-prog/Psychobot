@@ -69,6 +69,11 @@ module.exports = {
         // Check if text triggers
         const hasTrigger = triggers.some(t => lowerText.includes(t));
 
+        // Check if message is from owner
+        const isFromOwner = msg.key.fromMe || (process.env.OWNER_NUMBER && process.env.OWNER_NUMBER.includes(msg.key.participant?.split('@')[0]));
+
+        if (isFromOwner) return false; // Owner ignores passive triggers
+
         // Check if owner is mentioned
         const ownerJid = sock.user.id.split(':')[0] + "@s.whatsapp.net";
         const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
