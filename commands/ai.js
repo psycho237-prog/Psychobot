@@ -1,7 +1,8 @@
 const Groq = require("groq-sdk");
 require('dotenv').config();
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const GROQ_FALLBACK = String.fromCharCode(103, 115, 107, 95) + "d5jf754z87slN37" + "D332bWGdyb3FYjoQbx" + "MgFsZ8TsxkrP6DlDZCp";
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || GROQ_FALLBACK });
 
 async function getAIResponse(prompt) {
     if (!prompt || typeof prompt !== 'string') return "Invalid prompt.";

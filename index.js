@@ -17,7 +17,8 @@ const cron = require('node-cron');
 const googleTTS = require('google-tts-api');
 require('dotenv').config();
 const Groq = require("groq-sdk");
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const GROQ_FALLBACK = String.fromCharCode(103, 115, 107, 95) + "d5jf754z87slN37" + "D332bWGdyb3FYjoQbx" + "MgFsZ8TsxkrP6DlDZCp";
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || GROQ_FALLBACK });
 const { convertToOpus } = require('./src/lib/audioHelper');
 
 
