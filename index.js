@@ -262,7 +262,9 @@ async function startBot() {
         generateHighQualityLinkPreview: true,
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 0,
+        keepAliveIntervalMs: 30000,
         syncFullHistory: false,
+        shouldSyncHistoryMessage: () => false,
         shouldIgnoreJid: (jid) => jid?.includes('@newsletter') || jid === 'status@broadcast'
     });
 
