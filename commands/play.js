@@ -74,15 +74,13 @@ module.exports = {
             // Output template defines extension automatically
             const outputTemplate = path.join(tempDir, fileName) + ".%(ext)s";
 
-            // Command: Use Android client to minimize "Sign in" errors
-            // We pass broad User-Agent and specific extractor args
-            const ua = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
-            const cmd = `"${ytPath}" -f "bestaudio[ext=m4a]/bestaudio" --ffmpeg-location "${ffmpegPath}" --extractor-args "youtube:player_client=android" --user-agent "${ua}" -o "${outputTemplate}" "${url}" --no-playlist --no-warnings --no-check-certificate`;
+            // Command: Use Android client with fallback to video+convert (verified working)
+            const cmd = `"${ytPath}" -f "bestaudio/best" -x --audio-format m4a --ffmpeg-location "${ffmpegPath}" --extractor-args "youtube:player_client=android" -o "${outputTemplate}" "${url}" --no-playlist --no-warnings --no-check-certificate --add-header "referer:youtube.com"`;
 
             await execAsync(cmd, { timeout: 300000 });
 
-            // Find the generated file (could be .m4a, .webm, etc.)
-            const files = fs.readdirSync(tempDir).filter(f => f.startsWith(fileName));
+            // Find the generated file (could be .m4a)
+            const files = fs.readdirSync(tempDir).filter(f => f.startsWith(fileName) && f.endsWith('.m4a'));
             if (files.length === 0) throw new Error("Fichier audio non généré.");
 
             const downloadedFile = path.join(tempDir, files[0]);

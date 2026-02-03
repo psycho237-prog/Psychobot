@@ -22,9 +22,12 @@ module.exports = {
                 return await replyWithTag(sock, remoteJid, msg, "❌ Je dois être administrateur pour ajouter des membres.");
             }
 
-            // Vérifie si l'utilisateur est admin
+            // Vérifie si l'utilisateur est admin ou proprietaire
             const senderParticipant = participants.find(p => p.id.split('@')[0] === senderNumber);
-            if (!senderParticipant || !senderParticipant.admin) {
+            const isOwner = (senderNumber + '@s.whatsapp.net') === sock.user.id ||
+                (process.env.OWNER_NUMBER && process.env.OWNER_NUMBER.includes(senderNumber));
+
+            if (!isOwner && (!senderParticipant || !senderParticipant.admin)) {
                 return await replyWithTag(sock, remoteJid, msg, "❌ Seuls les administrateurs peuvent ajouter des membres.");
             }
 
