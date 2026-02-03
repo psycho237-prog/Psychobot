@@ -33,17 +33,24 @@ module.exports = {
                 buffer = Buffer.concat([buffer, chunk]);
             }
 
-            // 2. Convert Buffer to a Virtual File for Groq
-            // We use standard streaming to Groq Whisper (Turbo v3)
-            const audioFile = await Groq.toFile(buffer, 'voice.m4a', { type: 'audio/m4a' });
+            // 2. Save Buffer to Temporary File (Robust way for Node.js)
+            const fs = require('fs');
+            const os = require('os');
+            const path = require('path');
+
+            const tempFile = path.join(os.tmpdir(), `voice_${Date.now()}.m4a`);
+            fs.writeFileSync(tempFile, buffer);
 
             // 3. Send to Groq Whisper
             const response = await groq.audio.transcriptions.create({
-                file: audioFile,
+                file: fs.createReadStream(tempFile),
                 model: "whisper-large-v3-turbo", // High quality, low latency
                 response_format: "text",
                 temperature: 0.0,
             });
+
+            // Cleanup
+            fs.unlinkSync(tempFile);
 
             // 4. Send the result
             const responseText = `📝 *Transcription Audio*\n━━━━━━━━━━━━━━\n${response.trim()}`;

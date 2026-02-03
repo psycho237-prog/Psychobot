@@ -1,4 +1,6 @@
 const Groq = require("groq-sdk");
+const { convertToOpus } = require('../src/lib/audioHelper');
+const fs = require('fs');
 require('dotenv').config();
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -39,15 +41,73 @@ module.exports = {
             const encoded = encodeURIComponent(reply.substring(0, 500));
             const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encoded}&tl=fr&client=tw-ob`;
 
-            await sock.sendMessage(msg.key.remoteJid, {
-                audio: { url: ttsUrl },
-                mimetype: 'audio/mp4',
-                ptt: true
-            }, { quoted: msg });
+            try {
+                const audioPath = await convertToOpus(ttsUrl);
+
+                await sock.sendMessage(msg.key.remoteJid, {
+                    audio: { url: audioPath },
+                    mimetype: 'audio/ogg; codecs=opus',
+                    ptt: true
+                }, { quoted: msg });
+
+                fs.unlinkSync(audioPath);
+            } catch (e) {
+                console.error("Audio Convert Error:", e);
+                await replyWithTag(sock, msg.key.remoteJid, msg, "❌ Erreur conversion audio.");
+            }
 
         } catch (error) {
             console.error(error);
             await replyWithTag(sock, msg.key.remoteJid, msg, "❌ Impossible de générer la voix.");
         }
+    },
+    onMessage: async (sock, msg, text) => {
+        // Triggers: "bot", "psychobot", "ai" (case insensitive, whole words or starts with)
+        const triggers = ["bot", "psychobot", "ai"];
+        const lowerText = text.toLowerCase();
+
+        // Check if text triggers
+        const hasTrigger = triggers.some(t => lowerText.includes(t));
+
+        // Check if owner is mentioned
+        const ownerJid = sock.user.id.split(':')[0] + "@s.whatsapp.net";
+        const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+        const isOwnerMentioned = mentions.includes(ownerJid);
+
+        if (hasTrigger || isOwnerMentioned) {
+            console.log(`[AiSay] Triggered by ${hasTrigger ? 'keyword' : 'mention'}`);
+
+            const prompt = text;
+
+            try {
+                // Helper to generate and send
+                const generateAndSend = async () => {
+                    const { convertToOpus } = require('../src/lib/audioHelper');
+                    const fs = require('fs');
+
+                    const reply = await getAIResponse(prompt);
+                    if (!reply || reply === "Invalid." || reply.includes("can't generate")) return;
+
+                    const encoded = encodeURIComponent(reply.substring(0, 500));
+                    const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encoded}&tl=fr&client=tw-ob`;
+
+                    const audioPath = await convertToOpus(ttsUrl);
+
+                    await sock.sendMessage(msg.key.remoteJid, {
+                        audio: { url: audioPath },
+                        mimetype: 'audio/ogg; codecs=opus',
+                        ptt: true
+                    }, { quoted: msg });
+
+                    fs.unlinkSync(audioPath);
+                };
+
+                await generateAndSend();
+                return true;
+            } catch (e) {
+                console.error("[AiSay Passive] Error:", e);
+            }
+        }
+        return false;
     }
 };

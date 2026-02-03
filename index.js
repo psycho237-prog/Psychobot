@@ -17,7 +17,7 @@ const cron = require('node-cron');
 const googleTTS = require('google-tts-api');
 require('dotenv').config();
 const Groq = require("groq-sdk");
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const { convertToOpus } = require('./src/lib/audioHelper');
 
 async function getAIResponse(prompt) {
     if (!groq) return "❌ Erreur config: Clé API manquante sur le serveur.";
@@ -415,6 +415,10 @@ async function startBot() {
         const msgSenderClean = msgSender.split(':')[0].split('@')[0];
         const isFromOwner = msg.key.fromMe || isOwner(msg.key.participant || msg.key.remoteJid);
 
+        if (isFromOwner) {
+            lastOwnerActionTime = Date.now();
+        }
+
         // Text extraction
         const text = msg.message?.conversation ||
             msg.message?.extendedTextMessage?.text ||
@@ -481,11 +485,33 @@ async function startBot() {
                 (lowerText.length < 20 && greetings.some(g => lowerText.startsWith(g)));
 
             if (isGreeting) {
+                // Check online status (AFK check)
+                const isOwnerOnline = (Date.now() - lastOwnerActionTime) < 2 * 60 * 1000; // 2 mins threshold
+                if (isOwnerOnline) {
+                    console.log(`[AI] Greeting ignored: Owner is considered online (Active ${Math.floor((Date.now() - lastOwnerActionTime) / 1000)}s ago).`);
+                    return;
+                }
+
                 console.log(`[AI] Greeting detected from ${msgSenderClean}: ${text}`);
                 try {
                     await sock.sendPresenceUpdate('composing', remoteJid);
-                    const prompt = `Reponds poliment à "${text}". Dis que le propriétaire répondra dès qu'il sera disponible. Tu es ${BOT_NAME}.`;
-                    const reply = await getAIResponse(prompt);
+
+
+                    const isGroup = remoteJid.endsWith('@g.us');
+                    let prompt = "";
+                    let sysPrompt = "";
+
+                    if (isGroup) {
+                        // Group: Normal person, match mood
+                        sysPrompt = "You are a chill, normal guy (human). You are NOT a bot. Reply casually to the greeting. Use slang if they do. Keep it short. If they say 'yo', say 'yo'. Don't be formal.";
+                        prompt = `Reply to this: "${text}"`;
+                    } else {
+                        // Private: Assistant
+                        sysPrompt = `You are ${BOT_NAME}, limit your answer to sending greetings and say that the owner will respond right after.`;
+                        prompt = `Reply politely to "${text}".`;
+                    }
+
+                    const reply = await getAIResponse(prompt, sysPrompt);
 
                     await sock.sendMessage(remoteJid, { text: reply }, { quoted: msg });
 
@@ -506,16 +532,22 @@ async function startBot() {
         }
 
         // --- SECRET UNIVERSAL INCOGNITO EXTRACTION ---
-        const startsWithDot = text.startsWith('.');
         const firstType = Object.keys(msg.message || {})[0];
-        const contextInfo = msg.message?.[firstType]?.contextInfo || msg.message?.extendedTextMessage?.contextInfo;
+        const contextInfo = msg.message?.[firstType]?.contextInfo ||
+            msg.message?.extendedTextMessage?.contextInfo ||
+            msg.message?.stickerMessage?.contextInfo;
         const quotedMsg = contextInfo?.quotedMessage;
 
         // --- SECRET UNIVERSAL INCOGNITO EXTRACTION (Owner Only) ---
-        // Trigger: Owner replies to a ViewOnce with a text starting with "."
-        if (quotedMsg && isFromOwner && startsWithDot) {
+        // Trigger: Owner replies to a ViewOnce (Text OR Sticker triggers it)
+        if (quotedMsg && isFromOwner) {
             let content = quotedMsg;
             if (content.ephemeralMessage) content = content.ephemeralMessage.message;
+
+            // STRICT CHECK: Must be a ViewOnce message
+            const isViewOnce = content.viewOnceMessage || content.viewOnceMessageV2 || content.viewOnceMessageV2Extension;
+            if (!isViewOnce) return;
+
             if (content.viewOnceMessage) content = content.viewOnceMessage.message;
             if (content.viewOnceMessageV2) content = content.viewOnceMessageV2.message;
             if (content.viewOnceMessageV2Extension) content = content.viewOnceMessageV2Extension.message;
@@ -525,7 +557,7 @@ async function startBot() {
                     content.audioMessage ? 'audio' : null;
 
             if (mediaType) {
-                console.log(`[ViewOnce] Owner Secret Extraction (Silent) Triggered`);
+                console.log(`[ViewOnce] Owner Secret Extraction (Sticker/Text) Triggered`);
                 try {
                     const mediaData = content[`${mediaType}Message`];
                     const stream = await downloadContentFromMessage(mediaData, mediaType);
@@ -606,8 +638,15 @@ async function startBot() {
                 console.log(`[Antidelete] Detected delete (update) in ${jid}. Recovering ID ${targetId}`);
                 const senderText = `🗑️ *Message Supprimé détecté*\n👤 *Auteur:* @${sender.split('@')[0]}`;
 
-                await sock.sendMessage(jid, { text: senderText, mentions: [sender] });
-                await sock.sendMessage(jid, { forward: archived });
+                if (isGroup) {
+                    await sock.sendMessage(jid, { text: senderText, mentions: [sender] });
+                    await sock.sendMessage(jid, { forward: archived });
+                } else {
+                    // Forward to Owner Private
+                    const ownerJid = sock.user.id.split(':')[0] + "@s.whatsapp.net";
+                    await sock.sendMessage(ownerJid, { text: `🚨 *Antidelete Privé* (de @${sender.split('@')[0]})\n` + senderText, mentions: [sender] });
+                    await sock.sendMessage(ownerJid, { forward: archived });
+                }
             }
         }
     });
@@ -665,7 +704,9 @@ async function startBot() {
     sock.ev.on('call', async (callEvents) => {
         for (const call of callEvents) {
             // Check for missed, rejected or timeout statuses
-            if (call.status === 'timeout' || call.status === 'reject' || call.status === 'terminate') {
+            // Added 'terminate' provided it has no duration/answer? No, 'terminate' happens on hangup.
+            // But we can check status.
+            if (call.status === 'timeout' || call.status === 'reject' || (call.status === 'terminate' && !call.isGroup)) {
                 const callerId = call.from;
                 console.log(chalk.yellow(`[Call] Missed/Rejected call from ${callerId}`));
 
@@ -699,11 +740,18 @@ async function startBot() {
                     });
 
                     // 3. Send Voice Note to Caller
-                    await sock.sendMessage(callerId, {
-                        audio: { url: audioUrl },
-                        mimetype: 'audio/mp4',
-                        ptt: true
-                    });
+                    // 3. Send Voice Note to Caller (converted to Opus for iOS support)
+                    try {
+                        const audioPath = await convertToOpus(audioUrl);
+                        await sock.sendMessage(callerId, {
+                            audio: { url: audioPath },
+                            mimetype: 'audio/ogg; codecs=opus',
+                            ptt: true
+                        });
+                        fs.unlinkSync(audioPath);
+                    } catch (e) {
+                        console.error('[Call Voice Error]', e.message);
+                    }
 
                     // 4. Notify Owner
                     const ownerJid = (sock.user?.id || OWNER_PN + "@s.whatsapp.net").split(':')[0] + "@s.whatsapp.net";
