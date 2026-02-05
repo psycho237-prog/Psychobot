@@ -657,6 +657,11 @@ async function startBot() {
             const command = commands.get(commandName);
 
             if (command) {
+                // SECURITY: Only the bot owner can execute adminOnly commands
+                if (command.adminOnly && !isFromOwner) {
+                    return await sock.sendMessage(remoteJid, { text: "❌ Cette commande est réservée au propriétaire du bot (Owner Only)." }, { quoted: msg });
+                }
+
                 console.log(`[CMD] Executing ${commandName}...`);
                 try {
                     // Inject replyWithTag helper
